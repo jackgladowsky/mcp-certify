@@ -75,6 +75,7 @@ Connects to any MCP server (stdio or HTTP), runs automated checks across multipl
 | Suite | What it checks |
 |---|---|
 | **Protocol** | Initialize handshake, capability negotiation, tools/list, resources/list, prompts/list, ping |
+| **Authentication** | Static bearer/basic/header auth for HTTP servers, env-based auth for stdio servers, authenticated vs unauthenticated access checks |
 | **Security** | Tool poisoning (hidden instructions, zero-width chars, bidi overrides), data exfiltration patterns, dangerous tool names, missing input schemas, cross-tool shadowing |
 | **Functional** | Tool descriptions, input schema validity, required field declarations, tool name quality, optional tool calling |
 | **Performance** | Cold start time, list latency, ping latency, response sizes |
@@ -122,6 +123,12 @@ mcp-certify --policy ./policy.rego node my-server.js
 
 # Allow or deny specific hosts in policy checks
 mcp-certify --allow-host api.github.com --deny-host example.net node my-server.js
+
+# Test an authenticated stdio server
+mcp-certify --auth-env MCP_CERTIFY_TOKEN=letmein --auth-required node my-server.js
+
+# Test an authenticated HTTP server
+mcp-certify --bearer-token "$TOKEN" --auth-required --url http://localhost:3000/mcp
 ```
 
 Exit codes: `0` = certified, `1` = certification failed, `2` = fatal error.
@@ -139,6 +146,7 @@ src/
     report.ts                     Blocker, CertificationDecision, GateRule
   suites/
     protocol.ts                   Protocol compliance checks
+    authentication.ts             Auth config and unauthenticated access checks
     security.ts                   Static security scanning
     functional.ts                 Schema and metadata validation
     performance.ts                Latency and size benchmarks

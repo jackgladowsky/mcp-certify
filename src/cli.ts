@@ -1,7 +1,7 @@
 import { program } from 'commander';
 import { run } from './runner.js';
 import { printResults } from './reporter.js';
-import type { ServerTarget, RunOptions, Severity } from './types.js';
+import type { AuthConfig, ServerTarget, RunOptions, Severity } from './types.js';
 
 function collectValues(value: string, previous: string[] = []): string[] {
   previous.push(value);
@@ -17,6 +17,72 @@ function setIfExplicit<T extends object, K extends keyof T>(
   if (source === 'cli') {
     target[key] = value;
   }
+}
+
+function parseNameValuePairs(entries: string[], separator: string): Array<{ key: string; value: string }> {
+  return entries.map((entry) => {
+    const index = entry.indexOf(separator);
+    if (index <= 0 || index === entry.length - 1) {
+      throw new Error(`Expected NAME${separator}VALUE format, received "${entry}"`);
+    }
+
+    return {
+      key: entry.slice(0, index),
+      value: entry.slice(index + 1),
+    };
+  });
+}
+
+function buildAuthConfig(options: {
+  bearerToken?: string;
+  basicUser?: string;
+  basicPass?: string;
+  header?: string[];
+  authEnv?: string[];
+  authRequired?: boolean;
+}): AuthConfig | undefined {
+  const auth: AuthConfig = {};
+
+  if (options.bearerToken) {
+    auth.bearerToken = options.bearerToken;
+  }
+
+  if (options.basicUser || options.basicPass) {
+    if (!options.basicUser || !options.basicPass) {
+      throw new Error('Both --basic-user and --basic-pass are required for basic auth');
+    }
+    auth.basic = {
+      username: options.basicUser,
+      password: options.basicPass,
+    };
+  }
+
+  if ((options.header ?? []).length > 0) {
+    auth.headers = parseNameValuePairs(options.header ?? [], ':').map(({ key, value }) => ({
+      name: key,
+      value,
+    }));
+  }
+
+  if ((options.authEnv ?? []).length > 0) {
+    auth.env = Object.fromEntries(
+      parseNameValuePairs(options.authEnv ?? [], '=').map(({ key, value }) => [key, value]),
+    );
+  }
+
+  if (options.authRequired) {
+    if (
+      !auth.bearerToken &&
+      !auth.basic &&
+      !(auth.headers && auth.headers.length > 0) &&
+      !(auth.env && Object.keys(auth.env).length > 0)
+    ) {
+      throw new Error('--auth-required must be used with --bearer-token, --basic-user/--basic-pass, --header, or --auth-env');
+    }
+    auth.required = true;
+  }
+
+  return Object.keys(auth).length > 0 ? auth : undefined;
 }
 
 program
@@ -36,6 +102,12 @@ program
   .option('--policy <path>', 'Path to a custom OPA/Rego policy file')
   .option('--allow-host <host>', 'Allow outbound access to this host in policy checks', collectValues, [])
   .option('--deny-host <host>', 'Deny outbound access to this host in policy checks', collectValues, [])
+  .option('--bearer-token <token>', 'Bearer token for authenticated HTTP MCP servers')
+  .option('--basic-user <username>', 'Basic auth username for authenticated HTTP MCP servers')
+  .option('--basic-pass <password>', 'Basic auth password for authenticated HTTP MCP servers')
+  .option('--header <name:value>', 'Custom HTTP header to send during MCP requests', collectValues, [])
+  .option('--auth-env <KEY=VALUE>', 'Environment variable to inject for authenticated stdio servers', collectValues, [])
+  .option('--auth-required', 'Assert that the server should reject unauthenticated access')
   .option('--sandbox', 'Run server in sandbox mode')
   .action(async (commandParts: string[], options, command) => {
     if (!commandParts.length && !options.url) {
@@ -75,6 +147,18 @@ program
     }
     if ((options.denyHost as string[]).length > 0) {
       runOptions.denyHosts = options.denyHost as string[];
+    }
+
+    const auth = buildAuthConfig({
+      bearerToken: options.bearerToken,
+      basicUser: options.basicUser,
+      basicPass: options.basicPass,
+      header: options.header as string[],
+      authEnv: options.authEnv as string[],
+      authRequired: options.authRequired,
+    });
+    if (auth) {
+      runOptions.auth = auth;
     }
 
     try {

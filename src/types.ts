@@ -9,6 +9,10 @@ export type {
   SuiteResult,
   CertifyReport,
   GateRule,
+  AuthHeader,
+  BasicAuthConfig,
+  OAuthConfig,
+  AuthConfig,
   RunOptions,
   SuiteContext,
 } from './types/index.js';

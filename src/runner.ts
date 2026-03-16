@@ -1,5 +1,6 @@
 import { connect } from './connect.js';
 import { protocolSuite } from './suites/protocol.js';
+import { authenticationSuite } from './suites/authentication.js';
 import { securitySuite } from './suites/security.js';
 import { functionalSuite } from './suites/functional.js';
 import { performanceSuite } from './suites/performance.js';
@@ -23,6 +24,7 @@ import { DEFAULT_GATES } from './types.js';
 
 const SUITE_WEIGHTS: Record<string, number> = {
   Protocol: 0.22,
+  Authentication: 0.1,
   Security: 0.22,
   Functional: 0.12,
   Performance: 0.08,
@@ -31,7 +33,12 @@ const SUITE_WEIGHTS: Record<string, number> = {
   'Manifest Diff': 0.04,
 };
 
-const DEFAULT_SUITES = ['protocol', 'security', 'functional', 'performance'] as const;
+const DEFAULT_SUITES = [
+  'protocol',
+  'security',
+  'functional',
+  'performance',
+] as const;
 
 function computeOverallScore(
   suites: SuiteResult[],
@@ -135,6 +142,7 @@ function mergeDefinedOptions(base: Partial<RunOptions>, overrides: RunOptions): 
     callTools: overrides.callTools ?? base.callTools,
     timeout: overrides.timeout ?? base.timeout,
     profile: overrides.profile ?? base.profile,
+    auth: overrides.auth ?? base.auth,
     policyPath: overrides.policyPath ?? base.policyPath,
     baselinePath: overrides.baselinePath ?? base.baselinePath,
     artifactsDir: overrides.artifactsDir ?? base.artifactsDir,
@@ -152,10 +160,17 @@ function selectSuiteIds(target: ServerTarget, options: RunOptions): string[] {
   }
 
   if (profile) {
-    return [...profile.suites];
+    const selected = [...profile.suites];
+    if (options.auth && !selected.includes('authentication')) {
+      selected.push('authentication');
+    }
+    return selected;
   }
 
   const selected: string[] = [...DEFAULT_SUITES];
+  if (options.auth) {
+    selected.push('authentication');
+  }
   if (target.command) {
     selected.push('supplyChain');
   }
@@ -208,7 +223,7 @@ export async function run(
 
   const connectStart = performance.now();
   const { client } = await withTimeout(
-    connect(target),
+    connect(target, { auth: options.auth }),
     timeout,
     'connect',
   );
@@ -231,6 +246,9 @@ export async function run(
       const suite = await protocolSuite(client, ctx);
       await augmentProtocolSuite(suite, target, timeout);
       suites.push(suite);
+    }
+    if (suiteIds.includes('authentication')) {
+      suites.push(await authenticationSuite(target, client, ctx));
     }
     if (suiteIds.includes('security')) {
       suites.push(await securitySuite(client, ctx));

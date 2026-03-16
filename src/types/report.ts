@@ -37,6 +37,33 @@ export interface GateRule {
   evaluate: (findings: Finding[]) => Blocker[];
 }
 
+export interface AuthHeader {
+  name: string;
+  value: string;
+}
+
+export interface BasicAuthConfig {
+  username: string;
+  password: string;
+}
+
+export interface OAuthConfig {
+  issuerUrl?: string;
+  authorizationServerUrl?: string;
+  clientId?: string;
+  redirectUrl?: string;
+  scopes?: string[];
+}
+
+export interface AuthConfig {
+  bearerToken?: string;
+  basic?: BasicAuthConfig;
+  headers?: AuthHeader[];
+  env?: Record<string, string>;
+  required?: boolean;
+  oauth?: OAuthConfig;
+}
+
 export const DEFAULT_GATES: GateRule[] = [
   {
     name: 'no-critical',
@@ -52,13 +79,17 @@ export const DEFAULT_GATES: GateRule[] = [
   },
   {
     name: 'no-high-protocol',
-    description: 'High findings in protocol/runtime-policy fail certification',
+    description: 'High findings in protocol/runtime-policy/authentication fail certification',
     evaluate: (findings) =>
       findings
         .filter(
           (f) =>
             f.severity === 'high' &&
-            (f.category === 'protocol' || f.category === 'runtime-policy'),
+            (
+              f.category === 'protocol' ||
+              f.category === 'runtime-policy' ||
+              f.category === 'authentication'
+            ),
         )
         .map((f) => ({
           findingId: f.id,
@@ -72,6 +103,7 @@ export interface RunOptions {
   callTools?: boolean;
   timeout?: number;
   profile?: string;
+  auth?: AuthConfig;
   policyPath?: string;
   baselinePath?: string;
   artifactsDir?: string;

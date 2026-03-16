@@ -1,4 +1,5 @@
 import type { ServerTarget } from '../types.js';
+import { applyAuthEnv } from '../auth/config.js';
 import type { SuiteResult, SuiteContext, Finding, Blocker } from '../types/index.js';
 import { runInHarness } from '../runtime/harness.js';
 import type { HarnessConfig } from '../runtime/harness.js';
@@ -87,7 +88,7 @@ export async function runtimeSecuritySuite(
   const harnessConfig: HarnessConfig = {
     command: target.command,
     args: target.args ?? [],
-    env: target.env,
+    env: applyAuthEnv(target.env, ctx.options.auth),
     timeout: ctx.timeout ?? 30_000,
   };
 

@@ -1,7 +1,13 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { ServerTarget } from './types.js';
+import { applyAuthEnv, buildRequestInit } from './auth/config.js';
+import type { AuthConfig, ServerTarget } from './types.js';
+
+export interface ConnectOptions {
+  auth?: AuthConfig;
+  includeAuth?: boolean;
+}
 
 function createClient(): Client {
   return new Client({ name: 'mcp-certify', version: '0.1.0' }, { capabilities: {} });
@@ -9,9 +15,12 @@ function createClient(): Client {
 
 export async function connect(
   target: ServerTarget,
+  options: ConnectOptions = {},
 ): Promise<{ client: Client; transport: Transport }> {
+  const auth = options.includeAuth === false ? undefined : options.auth;
+
   if (target.url) {
-    return connectHTTP(target.url);
+    return connectHTTP(target.url, auth);
   }
 
   if (target.command) {
@@ -19,7 +28,7 @@ export async function connect(
     const transport = new StdioClientTransport({
       command: target.command,
       args: target.args ?? [],
-      env: target.env,
+      env: applyAuthEnv(target.env, auth),
       stderr: 'ignore',
     });
     await client.connect(transport);
@@ -31,14 +40,19 @@ export async function connect(
 
 async function connectHTTP(
   url: string,
+  auth?: AuthConfig,
 ): Promise<{ client: Client; transport: Transport }> {
+  const requestInit = buildRequestInit(auth);
+
   // Try streamable HTTP first, fall back to SSE
   try {
     const { StreamableHTTPClientTransport } = await import(
       '@modelcontextprotocol/sdk/client/streamableHttp.js'
     );
     const client = createClient();
-    const transport = new StreamableHTTPClientTransport(new URL(url));
+    const transport = new StreamableHTTPClientTransport(new URL(url), {
+      requestInit,
+    });
     await client.connect(transport);
     return { client, transport };
   } catch {
@@ -46,7 +60,9 @@ async function connectHTTP(
       '@modelcontextprotocol/sdk/client/sse.js'
     );
     const client = createClient();
-    const transport = new SSEClientTransport(new URL(url));
+    const transport = new SSEClientTransport(new URL(url), {
+      requestInit,
+    });
     await client.connect(transport);
     return { client, transport };
   }

@@ -1,5 +1,6 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { SuiteResult, SuiteContext, Finding, Severity } from '../types.js';
+import { evaluatePolicy } from '../integrations/opa.js';
 import { computeSuiteScore, extractToolText, withTimeout } from '../utils.js';
 
 interface Pattern {
@@ -94,6 +95,8 @@ interface ToolLike {
   name: string;
   description?: string;
   inputSchema?: Record<string, unknown>;
+  annotations?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 function scanPatterns(
@@ -134,9 +137,12 @@ export async function securitySuite(
 ): Promise<SuiteResult> {
   const findings: Finding[] = [];
   const start = performance.now();
+  const artifacts: Array<{ name: string; type: string; content?: string }> = [];
 
   // Get tools to scan
   let tools: ToolLike[] = [];
+  let resources: Array<{ name: string; uri: string }> = [];
+  let prompts: Array<{ name: string }> = [];
   const caps = client.getServerCapabilities();
   if (caps?.tools) {
     try {
@@ -158,8 +164,37 @@ export async function securitySuite(
         findings,
         score: computeSuiteScore(findings),
         certificationBlockers: [],
-        evidence: { artifacts: [], durationMs },
+        evidence: { artifacts, durationMs },
       };
+    }
+  }
+
+  if (caps?.resources) {
+    try {
+      const result = await withTimeout(
+        client.listResources(),
+        ctx.timeout,
+        'resources/list (security)',
+      );
+      resources = result.resources.map((resource) => ({
+        name: resource.name,
+        uri: resource.uri,
+      }));
+    } catch {
+      // Best effort for policy context.
+    }
+  }
+
+  if (caps?.prompts) {
+    try {
+      const result = await withTimeout(
+        client.listPrompts(),
+        ctx.timeout,
+        'prompts/list (security)',
+      );
+      prompts = result.prompts.map((prompt) => ({ name: prompt.name }));
+    } catch {
+      // Best effort for policy context.
     }
   }
 
@@ -177,7 +212,7 @@ export async function securitySuite(
       findings,
       score: computeSuiteScore(findings),
       certificationBlockers: [],
-      evidence: { artifacts: [], durationMs },
+      evidence: { artifacts, durationMs },
     };
   }
 
@@ -347,6 +382,44 @@ export async function securitySuite(
     }
   }
 
+  // 8. Policy evaluation
+  {
+    const policyResult = await evaluatePolicy(
+      {
+        tools,
+        resources,
+        prompts,
+        capabilities: (caps as Record<string, unknown>) ?? {},
+      },
+      {
+        policyPath: ctx.options.policyPath,
+        allowHosts: ctx.options.allowHosts,
+        denyHosts: ctx.options.denyHosts,
+        timeout: ctx.timeout,
+      },
+    );
+
+    if (policyResult.rawOutput) {
+      artifacts.push({
+        name: 'policy-evaluation',
+        type: 'json',
+        content: policyResult.rawOutput,
+      });
+    }
+
+    if (policyResult.findings.length > 0) {
+      findings.push(...policyResult.findings);
+    } else {
+      findings.push({
+        id: 'SEC-POLICY-000',
+        title: 'Policy evaluation clean',
+        severity: 'info',
+        category: 'runtime-policy',
+        description: 'No policy violations detected in tool metadata',
+      });
+    }
+  }
+
   const durationMs = Math.round(performance.now() - start);
 
   return {
@@ -354,6 +427,6 @@ export async function securitySuite(
     findings,
     score: computeSuiteScore(findings),
     certificationBlockers: [],
-    evidence: { artifacts: [], durationMs },
+    evidence: { artifacts, durationMs },
   };
 }

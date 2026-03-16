@@ -142,7 +142,7 @@ export async function evaluatePolicy(
       id: 'POLICY-000',
       title: 'OPA binary not found',
       severity: 'info',
-      category: 'policy-violation',
+      category: 'runtime-policy',
       description:
         'A custom policy path was provided but the OPA binary is not installed. Falling back to built-in rules. Install OPA to use custom policies: https://www.openpolicyagent.org/docs/latest/#running-opa',
       source: 'opa-integration',
@@ -480,7 +480,7 @@ function violationsToFindings(violations: Violation[]): Finding[] {
       id,
       title: RULE_TITLE_MAP[rule] ?? rule,
       severity,
-      category: 'policy-violation',
+      category: 'runtime-policy',
       description: v.msg,
       source: 'opa-policy',
       remediation: RULE_REMEDIATION_MAP[rule],

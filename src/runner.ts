@@ -3,6 +3,12 @@ import { protocolSuite } from './suites/protocol.js';
 import { securitySuite } from './suites/security.js';
 import { functionalSuite } from './suites/functional.js';
 import { performanceSuite } from './suites/performance.js';
+import { supplyChainSuite } from './suites/supplyChain.js';
+import { runtimeSecuritySuite } from './suites/runtimeSecurity.js';
+import { manifestDiffSuite } from './suites/manifestDiff.js';
+import { PROFILES } from './profiles/presets.js';
+import { runMcpValidator } from './integrations/mcp-validator.js';
+import { computeSuiteScore, withTimeout } from './utils.js';
 import type {
   ServerTarget,
   CertifyReport,
@@ -16,39 +22,196 @@ import type {
 import { DEFAULT_GATES } from './types.js';
 
 const SUITE_WEIGHTS: Record<string, number> = {
-  Protocol: 0.35,
-  Security: 0.35,
-  Functional: 0.2,
-  Performance: 0.1,
+  Protocol: 0.22,
+  Security: 0.22,
+  Functional: 0.12,
+  Performance: 0.08,
+  'Supply Chain': 0.14,
+  'Runtime Security': 0.18,
+  'Manifest Diff': 0.04,
 };
+
+const DEFAULT_SUITES = ['protocol', 'security', 'functional', 'performance'] as const;
 
 function computeOverallScore(
   suites: SuiteResult[],
 ): { score: number; breakdown: { name: string; score: number }[] } {
   const breakdown = suites.map((s) => ({ name: s.name, score: s.score }));
+  const totalWeight = suites.reduce(
+    (sum, suite) => sum + (SUITE_WEIGHTS[suite.name] ?? 0.1),
+    0,
+  );
+
+  if (totalWeight === 0) {
+    return { score: 100, breakdown };
+  }
+
   const score = suites.reduce((sum, suite) => {
-    const weight = SUITE_WEIGHTS[suite.name] ?? 0.25;
-    return sum + suite.score * weight;
+    const weight = SUITE_WEIGHTS[suite.name] ?? 0.1;
+    return sum + suite.score * (weight / totalWeight);
   }, 0);
+
   return { score: Math.round(score), breakdown };
 }
 
-function evaluateGates(suites: SuiteResult[]): Blocker[] {
-  const allFindings: Finding[] = suites.flatMap((s) => s.findings);
+function dedupeBlockers(blockers: Blocker[]): Blocker[] {
+  const seen = new Set<string>();
+  return blockers.filter((blocker) => {
+    const key = `${blocker.findingId}:${blocker.gate}:${blocker.reason}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildThresholdBlockers(
+  findings: Finding[],
+  score: number,
+  options: RunOptions,
+): Blocker[] {
+  if (!options.profile) return [];
+
+  const profile = PROFILES[options.profile];
+  if (!profile) return [];
+
   const blockers: Blocker[] = [];
+  const criticalCount = findings.filter((f) => f.severity === 'critical').length;
+  const highCount = findings.filter((f) => f.severity === 'high').length;
+
+  if (
+    profile.failThresholds.minScore !== undefined &&
+    score < profile.failThresholds.minScore
+  ) {
+    blockers.push({
+      findingId: 'PROFILE-MIN-SCORE',
+      gate: 'profile-min-score',
+      reason: `Profile "${profile.name}" requires score >= ${profile.failThresholds.minScore}`,
+    });
+  }
+
+  if (
+    profile.failThresholds.maxCritical !== undefined &&
+    criticalCount > profile.failThresholds.maxCritical
+  ) {
+    blockers.push({
+      findingId: 'PROFILE-MAX-CRITICAL',
+      gate: 'profile-max-critical',
+      reason: `Profile "${profile.name}" allows at most ${profile.failThresholds.maxCritical} critical findings`,
+    });
+  }
+
+  if (
+    profile.failThresholds.maxHigh !== undefined &&
+    highCount > profile.failThresholds.maxHigh
+  ) {
+    blockers.push({
+      findingId: 'PROFILE-MAX-HIGH',
+      gate: 'profile-max-high',
+      reason: `Profile "${profile.name}" allows at most ${profile.failThresholds.maxHigh} high findings`,
+    });
+  }
+
+  return blockers;
+}
+
+function evaluateGates(
+  suites: SuiteResult[],
+  score: number,
+  options: RunOptions,
+): Blocker[] {
+  const allFindings: Finding[] = suites.flatMap((s) => s.findings);
+  const blockers: Blocker[] = suites.flatMap((suite) => suite.certificationBlockers);
+
   for (const gate of DEFAULT_GATES) {
     blockers.push(...gate.evaluate(allFindings));
   }
-  return blockers;
+
+  blockers.push(...buildThresholdBlockers(allFindings, score, options));
+  return dedupeBlockers(blockers);
+}
+
+function mergeDefinedOptions(base: Partial<RunOptions>, overrides: RunOptions): RunOptions {
+  return {
+    callTools: overrides.callTools ?? base.callTools,
+    timeout: overrides.timeout ?? base.timeout,
+    profile: overrides.profile ?? base.profile,
+    policyPath: overrides.policyPath ?? base.policyPath,
+    baselinePath: overrides.baselinePath ?? base.baselinePath,
+    artifactsDir: overrides.artifactsDir ?? base.artifactsDir,
+    failOn: overrides.failOn ?? base.failOn,
+    sandbox: overrides.sandbox ?? base.sandbox,
+    allowHosts: overrides.allowHosts ?? base.allowHosts,
+    denyHosts: overrides.denyHosts ?? base.denyHosts,
+  };
+}
+
+function selectSuiteIds(target: ServerTarget, options: RunOptions): string[] {
+  const profile = options.profile ? PROFILES[options.profile] : undefined;
+  if (options.profile && !profile) {
+    throw new Error(`Unknown profile: ${options.profile}`);
+  }
+
+  if (profile) {
+    return [...profile.suites];
+  }
+
+  const selected: string[] = [...DEFAULT_SUITES];
+  if (target.command) {
+    selected.push('supplyChain');
+  }
+  if (options.baselinePath || options.artifactsDir) {
+    selected.push('manifestDiff');
+  }
+  if (options.sandbox) {
+    selected.push('runtime');
+  }
+  return selected;
+}
+
+async function augmentProtocolSuite(
+  suite: SuiteResult,
+  target: ServerTarget,
+  timeout: number,
+): Promise<void> {
+  if (!target.command) return;
+
+  const { findings, rawOutput } = await runMcpValidator(
+    target.command,
+    target.args ?? [],
+    timeout,
+  );
+
+  suite.findings.push(...findings);
+  suite.score = computeSuiteScore(suite.findings);
+  if (rawOutput) {
+    suite.evidence.rawOutput = suite.evidence.rawOutput
+      ? `${suite.evidence.rawOutput}\n\n${rawOutput}`
+      : rawOutput;
+    suite.evidence.artifacts.push({
+      name: 'mcp-validator-output',
+      type: 'text',
+      content: rawOutput,
+    });
+  }
 }
 
 export async function run(
   target: ServerTarget,
-  options: RunOptions = {},
+  incomingOptions: RunOptions = {},
 ): Promise<CertifyReport> {
+  const profileDefaults = incomingOptions.profile
+    ? PROFILES[incomingOptions.profile]?.options ?? {}
+    : {};
+  const options = mergeDefinedOptions(profileDefaults, incomingOptions);
   const timeout = options.timeout ?? target.timeout ?? 10000;
+  const suiteIds = selectSuiteIds(target, options);
+
   const connectStart = performance.now();
-  const { client } = await connect(target);
+  const { client } = await withTimeout(
+    connect(target),
+    timeout,
+    'connect',
+  );
   const connectDuration = Math.round(performance.now() - connectStart);
 
   const serverVersion = client.getServerVersion();
@@ -61,34 +224,64 @@ export async function run(
     timeout,
   };
 
-  const suites = [
-    await protocolSuite(client, ctx),
-    await securitySuite(client, ctx),
-    await functionalSuite(client, ctx),
-    await performanceSuite(client, ctx),
-  ];
+  const suites: SuiteResult[] = [];
 
   try {
-    await client.close();
-  } catch {
-    // Server may have already disconnected
+    if (suiteIds.includes('protocol')) {
+      const suite = await protocolSuite(client, ctx);
+      await augmentProtocolSuite(suite, target, timeout);
+      suites.push(suite);
+    }
+    if (suiteIds.includes('security')) {
+      suites.push(await securitySuite(client, ctx));
+    }
+    if (suiteIds.includes('functional')) {
+      suites.push(await functionalSuite(client, ctx));
+    }
+    if (suiteIds.includes('performance')) {
+      suites.push(await performanceSuite(client, ctx));
+    }
+    if (suiteIds.includes('manifestDiff')) {
+      suites.push(await manifestDiffSuite(client, ctx));
+    }
+  } finally {
+    try {
+      await client.close();
+    } catch {
+      // Server may have already disconnected
+    }
   }
 
-  const blockers = evaluateGates(suites);
-
-  // Apply blocker info back to each suite
-  for (const suite of suites) {
-    suite.certificationBlockers = blockers.filter((b) =>
-      suite.findings.some((f) => f.id === b.findingId),
+  if (suiteIds.includes('supplyChain')) {
+    suites.push(
+      await supplyChainSuite({
+        serverCommand: [target.command, ...(target.args ?? [])]
+          .filter(Boolean)
+          .join(' '),
+        timeout,
+      }),
     );
   }
 
-  const { score, breakdown } = computeOverallScore(suites);
+  if (suiteIds.includes('runtime')) {
+    suites.push(await runtimeSecuritySuite(target, ctx));
+  }
 
-  // Determine decision: fail if any blockers, or if failOn override triggers
+  const { score, breakdown } = computeOverallScore(suites);
+  const blockers = evaluateGates(suites, score, options);
+
+  for (const suite of suites) {
+    const derived = blockers.filter((b) =>
+      suite.findings.some((f) => f.id === b.findingId),
+    );
+    suite.certificationBlockers = dedupeBlockers([
+      ...suite.certificationBlockers,
+      ...derived,
+    ]);
+  }
+
   let decision: CertificationDecision = blockers.length > 0 ? 'fail' : 'pass';
 
-  // failOn override: check if any finding meets or exceeds the specified severity
   if (options.failOn && decision === 'pass') {
     const severityOrder: Record<string, number> = {
       info: 0,

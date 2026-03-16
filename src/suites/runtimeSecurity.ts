@@ -107,10 +107,10 @@ export async function runtimeSecuritySuite(
     if (result.canaryLeaks.length > 0) {
       allFindings.push({
         id: 'RUNTIME-EXFIL-002',
-        title: 'Canary tokens detected in server output streams',
+        title: 'Canary tokens detected in server stderr',
         severity: 'critical',
         category: 'runtime-exfil',
-        description: `${result.canaryLeaks.length} canary token(s) from seeded credential files appeared in server stdout/stderr.`,
+        description: `${result.canaryLeaks.length} canary token(s) from seeded credential files appeared in server stderr.`,
         evidence: `Leaked tokens: ${result.canaryLeaks.length}`,
         remediation:
           'The server must not read or output user credential file contents.',

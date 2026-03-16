@@ -45,7 +45,7 @@ No comprehensive testing tool exists. The pieces are fragmented — MCP Inspecto
 
 ## What it does
 
-Connects to any MCP server (stdio or HTTP), runs automated checks across six dimensions, and outputs a certification decision with evidence.
+Connects to any MCP server (stdio or HTTP), runs automated checks across multiple suites, and outputs a certification decision with evidence.
 
 **Certification is gate-based, not score-based.** Any critical finding fails certification. Any high finding in protocol or runtime policy fails certification. Score is secondary context.
 
@@ -95,6 +95,12 @@ mcp-certify --profile enterprise-strict node my-server.js
 
 # Diff against a saved baseline
 mcp-certify --baseline ./baseline.json node my-server.js
+
+# Evaluate metadata against a custom Rego policy
+mcp-certify --policy ./policy.rego node my-server.js
+
+# Allow or deny specific hosts in policy checks
+mcp-certify --allow-host api.github.com --deny-host example.net node my-server.js
 ```
 
 Exit codes: `0` = certified, `1` = certification failed, `2` = fatal error.

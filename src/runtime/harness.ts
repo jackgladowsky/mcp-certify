@@ -1,5 +1,5 @@
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -16,6 +16,13 @@ export interface HarnessConfig {
   env?: Record<string, string>;
   timeout: number;
   workDir?: string;
+}
+
+function resolveCommandPath(command: string, workDir: string): string {
+  if (command.includes('/') || command.includes('\\')) {
+    return isAbsolute(command) ? command : resolve(workDir, command);
+  }
+  return command;
 }
 
 export interface HarnessResult {
@@ -51,7 +58,6 @@ export async function runInHarness(
   let client: Client | undefined;
   let transport: StdioClientTransport | undefined;
   let stderrText = '';
-  let stdoutText = '';
   const scenarioResults = new Map<string, ScenarioResult>();
 
   try {
@@ -97,11 +103,12 @@ export async function runInHarness(
       { capabilities: {} },
     );
 
+    const workDir = config.workDir ?? process.cwd();
     transport = new StdioClientTransport({
-      command: config.command,
+      command: resolveCommandPath(config.command, workDir),
       args: config.args,
       env: sandboxEnv,
-      cwd: config.workDir ?? tempHome,
+      cwd: workDir,
       stderr: 'pipe',
     });
 
@@ -148,9 +155,9 @@ export async function runInHarness(
       }
     }
 
-    // 8. Post-run analysis: check all output for canary leaks
-    const allOutput = stdoutText + '\n' + stderrText;
-    const leaks = checkCanaryLeaks(allOutput, canaries);
+    // 8. Post-run analysis: check stderr for canary leaks.
+    // Tool results are inspected inside the runtime scenarios themselves.
+    const leaks = checkCanaryLeaks(stderrText, canaries);
     const filesAccessed = await checkCanaryAccess(tempHome, canaries);
     const networkRequests = (capture?.events ?? []).map(
       (e) => `${e.method ?? e.type} ${e.destination}`,
@@ -164,7 +171,7 @@ export async function runInHarness(
     }
 
     return {
-      stdout: stdoutText,
+      stdout: '',
       stderr: stderrText,
       exitCode: null,
       filesAccessed,

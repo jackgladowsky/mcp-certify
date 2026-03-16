@@ -1,39 +1,22 @@
-import type { TestResult, TestStatus, SuiteResult } from './types.js';
+import type { Finding, Severity } from './types.js';
 
-export async function runTest(
-  name: string,
-  fn: () => Promise<Partial<TestResult>>,
-): Promise<TestResult> {
-  const start = performance.now();
-  try {
-    const result = await fn();
-    return {
-      name,
-      status: result.status ?? 'pass',
-      message: result.message,
-      details: result.details,
-      duration: result.duration ?? Math.round(performance.now() - start),
-    };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return {
-      name,
-      status: 'error',
-      message: msg,
-      duration: Math.round(performance.now() - start),
-    };
-  }
-}
+export { withTimeout } from './utils/timeout.js';
 
-export function computeSuiteScore(tests: TestResult[]): number {
-  const scoreable = tests.filter((t) => t.status !== 'skip');
-  if (scoreable.length === 0) return 100;
-  const points = scoreable.reduce((sum, t) => {
-    if (t.status === 'pass') return sum + 1;
-    if (t.status === 'warn') return sum + 0.5;
-    return sum;
-  }, 0);
-  return Math.round((points / scoreable.length) * 100);
+const SEVERITY_DEDUCTIONS: Record<Severity, number> = {
+  critical: 40,
+  high: 20,
+  medium: 10,
+  low: 5,
+  info: 0,
+};
+
+export function computeSuiteScore(findings: Finding[]): number {
+  if (findings.length === 0) return 100;
+  const deduction = findings.reduce(
+    (sum, f) => sum + SEVERITY_DEDUCTIONS[f.severity],
+    0,
+  );
+  return Math.max(0, 100 - deduction);
 }
 
 export function extractToolText(tool: {

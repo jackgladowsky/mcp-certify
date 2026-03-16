@@ -1,86 +1,199 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import type { SuiteResult, SuiteContext, TestResult } from '../types.js';
-import { runTest, computeSuiteScore } from '../utils.js';
+import type { SuiteResult, SuiteContext, Finding } from '../types.js';
+import { computeSuiteScore, withTimeout } from '../utils.js';
 
 export async function performanceSuite(
   client: Client,
   ctx: SuiteContext,
 ): Promise<SuiteResult> {
-  const tests: TestResult[] = [];
+  const findings: Finding[] = [];
+  const start = performance.now();
 
   // 1. Cold start time
-  tests.push(coldStartTest(ctx.connectDuration));
+  findings.push(coldStartFinding(ctx.connectDuration));
 
   // 2. tools/list latency
   const caps = client.getServerCapabilities();
   if (caps?.tools) {
-    tests.push(await latencyTest('tools/list latency', () => client.listTools(), 1000));
+    findings.push(
+      await latencyFinding(
+        'PERF-002',
+        'tools/list latency',
+        () => withTimeout(client.listTools(), ctx.timeout, 'tools/list (perf)'),
+        1000,
+      ),
+    );
   }
 
   // 3. resources/list latency
   if (caps?.resources) {
-    tests.push(
-      await latencyTest('resources/list latency', () => client.listResources(), 1000),
+    findings.push(
+      await latencyFinding(
+        'PERF-003',
+        'resources/list latency',
+        () => withTimeout(client.listResources(), ctx.timeout, 'resources/list (perf)'),
+        1000,
+      ),
     );
   }
 
   // 4. Ping latency
-  tests.push(await latencyTest('Ping latency', () => client.ping(), 500));
+  findings.push(
+    await latencyFinding(
+      'PERF-004',
+      'Ping latency',
+      () => withTimeout(client.ping(), ctx.timeout, 'ping (perf)'),
+      500,
+    ),
+  );
 
   // 5. Response size check (tools/list)
   if (caps?.tools) {
-    tests.push(await responseSizeTest(client));
+    findings.push(await responseSizeFinding(client, ctx));
   }
+
+  const durationMs = Math.round(performance.now() - start);
 
   return {
     name: 'Performance',
-    tests,
-    score: computeSuiteScore(tests),
+    findings,
+    score: computeSuiteScore(findings),
+    certificationBlockers: [],
+    evidence: { artifacts: [], durationMs },
   };
 }
 
-function coldStartTest(durationMs: number): TestResult {
-  let status: TestResult['status'] = 'pass';
-  if (durationMs > 10_000) status = 'fail';
-  else if (durationMs > 5_000) status = 'warn';
-
+function coldStartFinding(durationMs: number): Finding {
+  if (durationMs > 10_000) {
+    return {
+      id: 'PERF-001',
+      title: 'Slow cold start',
+      severity: 'medium',
+      category: 'performance',
+      description: `Server cold start took ${durationMs}ms (>10s threshold)`,
+      evidence: `${durationMs}ms`,
+      remediation: 'Optimize server startup; consider lazy-loading heavy dependencies',
+    };
+  }
+  if (durationMs > 5_000) {
+    return {
+      id: 'PERF-001',
+      title: 'Slow cold start',
+      severity: 'low',
+      category: 'performance',
+      description: `Server cold start took ${durationMs}ms (>5s threshold)`,
+      evidence: `${durationMs}ms`,
+      remediation: 'Consider optimizing server startup time',
+    };
+  }
   return {
-    name: 'Cold start time',
-    status,
-    message: `${durationMs}ms`,
-    duration: durationMs,
+    id: 'PERF-001',
+    title: 'Cold start time',
+    severity: 'info',
+    category: 'performance',
+    description: `Server cold start completed in ${durationMs}ms`,
+    evidence: `${durationMs}ms`,
   };
 }
 
-async function latencyTest(
+async function latencyFinding(
+  id: string,
   name: string,
   fn: () => Promise<unknown>,
   warnThresholdMs: number,
-): Promise<TestResult> {
-  return runTest(name, async () => {
-    const start = performance.now();
+): Promise<Finding> {
+  const callStart = performance.now();
+  try {
     await fn();
-    const duration = Math.round(performance.now() - start);
+    const duration = Math.round(performance.now() - callStart);
 
-    let status: TestResult['status'] = 'pass';
-    if (duration > warnThresholdMs * 3) status = 'fail';
-    else if (duration > warnThresholdMs) status = 'warn';
-
-    return { status, message: `${duration}ms`, duration };
-  });
+    if (duration > warnThresholdMs * 3) {
+      return {
+        id,
+        title: `Slow response: ${name}`,
+        severity: 'low',
+        category: 'performance',
+        description: `${name} took ${duration}ms (>${warnThresholdMs * 3}ms threshold)`,
+        evidence: `${duration}ms`,
+        remediation: `Optimize ${name} to respond within ${warnThresholdMs}ms`,
+      };
+    }
+    if (duration > warnThresholdMs) {
+      return {
+        id,
+        title: `Slow response: ${name}`,
+        severity: 'low',
+        category: 'performance',
+        description: `${name} took ${duration}ms (>${warnThresholdMs}ms threshold)`,
+        evidence: `${duration}ms`,
+      };
+    }
+    return {
+      id,
+      title: name,
+      severity: 'info',
+      category: 'performance',
+      description: `${name}: ${duration}ms`,
+      evidence: `${duration}ms`,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      id,
+      title: `${name} failed`,
+      severity: 'low',
+      category: 'performance',
+      description: `${name} call failed: ${msg}`,
+      evidence: msg,
+    };
+  }
 }
 
-async function responseSizeTest(client: Client): Promise<TestResult> {
-  return runTest('tools/list response size', async () => {
-    const result = await client.listTools();
+async function responseSizeFinding(client: Client, ctx: SuiteContext): Promise<Finding> {
+  try {
+    const result = await withTimeout(client.listTools(), ctx.timeout, 'tools/list (size)');
     const json = JSON.stringify(result);
     const bytes = new TextEncoder().encode(json).length;
     const kb = (bytes / 1024).toFixed(1);
 
-    let status: TestResult['status'] = 'pass';
-    if (bytes > 1_000_000) status = 'fail';
-    else if (bytes > 100_000) status = 'warn';
-
-    return { status, message: `${kb} KB` };
-  });
+    if (bytes > 1_000_000) {
+      return {
+        id: 'PERF-005',
+        title: 'Large tools/list response',
+        severity: 'medium',
+        category: 'performance',
+        description: `tools/list response is ${kb} KB (>1MB threshold)`,
+        evidence: `${kb} KB (${bytes} bytes)`,
+        remediation: 'Reduce tool descriptions or split into paginated responses',
+      };
+    }
+    if (bytes > 100_000) {
+      return {
+        id: 'PERF-005',
+        title: 'Large tools/list response',
+        severity: 'low',
+        category: 'performance',
+        description: `tools/list response is ${kb} KB (>100KB threshold)`,
+        evidence: `${kb} KB (${bytes} bytes)`,
+      };
+    }
+    return {
+      id: 'PERF-005',
+      title: 'tools/list response size',
+      severity: 'info',
+      category: 'performance',
+      description: `tools/list response size: ${kb} KB`,
+      evidence: `${kb} KB`,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      id: 'PERF-005',
+      title: 'tools/list response size check failed',
+      severity: 'low',
+      category: 'performance',
+      description: `Could not measure response size: ${msg}`,
+      evidence: msg,
+    };
+  }
 }

@@ -1,112 +1,226 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import type { SuiteResult, SuiteContext, TestResult } from '../types.js';
-import { runTest, computeSuiteScore } from '../utils.js';
+import type { SuiteResult, SuiteContext, Finding } from '../types.js';
+import { computeSuiteScore, withTimeout } from '../utils.js';
 
 export async function protocolSuite(
   client: Client,
   ctx: SuiteContext,
 ): Promise<SuiteResult> {
-  const tests: TestResult[] = [];
+  const findings: Finding[] = [];
+  const start = performance.now();
 
   // 1. Initialize handshake (already succeeded if we're here)
-  tests.push(
-    await runTest('Initialize handshake', async () => ({
-      status: 'pass',
-      message: `${ctx.connectDuration}ms`,
-      duration: ctx.connectDuration,
-    })),
-  );
+  findings.push({
+    id: 'PROTO-001',
+    title: 'Initialize handshake',
+    severity: 'info',
+    category: 'protocol',
+    description: `MCP handshake completed in ${ctx.connectDuration}ms`,
+    evidence: `Connect duration: ${ctx.connectDuration}ms`,
+  });
 
   // 2. Server info
-  tests.push(
-    await runTest('Server info present', async () => {
-      const info = client.getServerVersion();
-      if (!info) return { status: 'warn', message: 'No server info returned' };
-      if (!info.name) return { status: 'warn', message: 'Server name missing' };
-      return { status: 'pass', message: `${info.name} v${info.version}` };
-    }),
-  );
+  const info = client.getServerVersion();
+  if (!info) {
+    findings.push({
+      id: 'PROTO-002',
+      title: 'Server info missing',
+      severity: 'medium',
+      category: 'protocol',
+      description: 'Server did not return version information during initialization',
+      remediation: 'Return name and version in the server info response',
+    });
+  } else if (!info.name) {
+    findings.push({
+      id: 'PROTO-002',
+      title: 'Server name missing',
+      severity: 'medium',
+      category: 'protocol',
+      description: 'Server returned version info but name field is empty',
+      remediation: 'Include a server name in the initialization response',
+    });
+  } else {
+    findings.push({
+      id: 'PROTO-002',
+      title: 'Server info present',
+      severity: 'info',
+      category: 'protocol',
+      description: `Server identified as ${info.name} v${info.version}`,
+    });
+  }
 
   // 3. Capabilities
-  tests.push(
-    await runTest('Capabilities declared', async () => {
-      const caps = client.getServerCapabilities();
-      if (!caps) return { status: 'warn', message: 'No capabilities declared' };
-      const declared = Object.keys(caps).filter(
-        (k) => (caps as Record<string, unknown>)[k],
-      );
-      if (declared.length === 0)
-        return { status: 'warn', message: 'Empty capabilities' };
-      return { status: 'pass', message: declared.join(', ') };
-    }),
-  );
+  const caps = client.getServerCapabilities();
+  if (!caps) {
+    findings.push({
+      id: 'PROTO-003',
+      title: 'No capabilities declared',
+      severity: 'high',
+      category: 'protocol',
+      description: 'Server did not declare any capabilities during initialization',
+      remediation: 'Declare capabilities (tools, resources, prompts) in the server response',
+    });
+  } else {
+    const declared = Object.keys(caps).filter(
+      (k) => (caps as Record<string, unknown>)[k],
+    );
+    if (declared.length === 0) {
+      findings.push({
+        id: 'PROTO-003',
+        title: 'Empty capabilities',
+        severity: 'medium',
+        category: 'protocol',
+        description: 'Server declared capabilities object but all values are falsy',
+        remediation: 'Enable at least one capability (tools, resources, or prompts)',
+      });
+    } else {
+      findings.push({
+        id: 'PROTO-003',
+        title: 'Capabilities declared',
+        severity: 'info',
+        category: 'protocol',
+        description: `Server declares: ${declared.join(', ')}`,
+      });
+    }
+  }
 
   // 4. tools/list
-  const caps = client.getServerCapabilities();
   if (caps?.tools) {
-    tests.push(
-      await runTest('tools/list returns valid response', async () => {
-        const { tools } = await client.listTools();
-        if (!Array.isArray(tools))
-          return { status: 'fail', message: 'tools is not an array' };
-        return { status: 'pass', message: `${tools.length} tool(s)` };
-      }),
-    );
-  } else {
-    tests.push({
-      name: 'tools/list',
-      status: 'skip',
-      message: 'Tools capability not declared',
-    });
+    try {
+      const { tools } = await withTimeout(client.listTools(), ctx.timeout, 'tools/list');
+      if (!Array.isArray(tools)) {
+        findings.push({
+          id: 'PROTO-004',
+          title: 'tools/list returns invalid response',
+          severity: 'high',
+          category: 'protocol',
+          description: 'tools/list did not return an array for the tools field',
+          remediation: 'Return { tools: [...] } from the tools/list handler',
+        });
+      } else {
+        findings.push({
+          id: 'PROTO-004',
+          title: 'tools/list returns valid response',
+          severity: 'info',
+          category: 'protocol',
+          description: `tools/list returned ${tools.length} tool(s)`,
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      findings.push({
+        id: 'PROTO-004',
+        title: 'tools/list failed',
+        severity: 'high',
+        category: 'protocol',
+        description: `tools/list call failed: ${msg}`,
+        evidence: msg,
+      });
+    }
   }
 
   // 5. resources/list
   if (caps?.resources) {
-    tests.push(
-      await runTest('resources/list returns valid response', async () => {
-        const { resources } = await client.listResources();
-        if (!Array.isArray(resources))
-          return { status: 'fail', message: 'resources is not an array' };
-        return { status: 'pass', message: `${resources.length} resource(s)` };
-      }),
-    );
-  } else {
-    tests.push({
-      name: 'resources/list',
-      status: 'skip',
-      message: 'Resources capability not declared',
-    });
+    try {
+      const { resources } = await withTimeout(client.listResources(), ctx.timeout, 'resources/list');
+      if (!Array.isArray(resources)) {
+        findings.push({
+          id: 'PROTO-005',
+          title: 'resources/list returns invalid response',
+          severity: 'high',
+          category: 'protocol',
+          description: 'resources/list did not return an array for the resources field',
+          remediation: 'Return { resources: [...] } from the resources/list handler',
+        });
+      } else {
+        findings.push({
+          id: 'PROTO-005',
+          title: 'resources/list returns valid response',
+          severity: 'info',
+          category: 'protocol',
+          description: `resources/list returned ${resources.length} resource(s)`,
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      findings.push({
+        id: 'PROTO-005',
+        title: 'resources/list failed',
+        severity: 'high',
+        category: 'protocol',
+        description: `resources/list call failed: ${msg}`,
+        evidence: msg,
+      });
+    }
   }
 
   // 6. prompts/list
   if (caps?.prompts) {
-    tests.push(
-      await runTest('prompts/list returns valid response', async () => {
-        const { prompts } = await client.listPrompts();
-        if (!Array.isArray(prompts))
-          return { status: 'fail', message: 'prompts is not an array' };
-        return { status: 'pass', message: `${prompts.length} prompt(s)` };
-      }),
-    );
-  } else {
-    tests.push({
-      name: 'prompts/list',
-      status: 'skip',
-      message: 'Prompts capability not declared',
-    });
+    try {
+      const { prompts } = await withTimeout(client.listPrompts(), ctx.timeout, 'prompts/list');
+      if (!Array.isArray(prompts)) {
+        findings.push({
+          id: 'PROTO-006',
+          title: 'prompts/list returns invalid response',
+          severity: 'high',
+          category: 'protocol',
+          description: 'prompts/list did not return an array for the prompts field',
+          remediation: 'Return { prompts: [...] } from the prompts/list handler',
+        });
+      } else {
+        findings.push({
+          id: 'PROTO-006',
+          title: 'prompts/list returns valid response',
+          severity: 'info',
+          category: 'protocol',
+          description: `prompts/list returned ${prompts.length} prompt(s)`,
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      findings.push({
+        id: 'PROTO-006',
+        title: 'prompts/list failed',
+        severity: 'high',
+        category: 'protocol',
+        description: `prompts/list call failed: ${msg}`,
+        evidence: msg,
+      });
+    }
   }
 
   // 7. Ping
-  tests.push(
-    await runTest('Ping responds', async () => {
-      await client.ping();
-      return { status: 'pass' };
-    }),
-  );
+  try {
+    await withTimeout(client.ping(), ctx.timeout, 'ping');
+    findings.push({
+      id: 'PROTO-007',
+      title: 'Ping responds',
+      severity: 'info',
+      category: 'protocol',
+      description: 'Server responded to ping request',
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    findings.push({
+      id: 'PROTO-007',
+      title: 'Ping failed',
+      severity: 'medium',
+      category: 'protocol',
+      description: `Server did not respond to ping: ${msg}`,
+      evidence: msg,
+    });
+  }
+
+  const durationMs = Math.round(performance.now() - start);
 
   return {
     name: 'Protocol',
-    tests,
-    score: computeSuiteScore(tests),
+    findings,
+    score: computeSuiteScore(findings),
+    certificationBlockers: [],
+    evidence: {
+      artifacts: [],
+      durationMs,
+    },
   };
 }

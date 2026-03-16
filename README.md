@@ -37,6 +37,27 @@ Score: 98/100
   Performance   100  ████████████████████
 ```
 
+## Quick Start
+
+```bash
+# Install
+git clone https://github.com/jackgladowsky/mcp-certify.git
+cd mcp-certify
+npm install
+npm run build
+
+# Test any MCP server
+node dist/cli.js <your server command here>
+
+# Examples
+node dist/cli.js npx -y @modelcontextprotocol/server-filesystem /tmp
+node dist/cli.js node path/to/my-server.js
+node dist/cli.js python my_server.py
+node dist/cli.js --url http://localhost:3000/mcp
+```
+
+Requires Node.js 20+.
+
 ## Problem
 
 18,000+ MCP servers exist and most are broken or insecure. Average security score across scanned servers is 34/100. Registries disclaim "community servers are untested — use at your own risk." 38% of enterprises say security concerns are blocking MCP adoption.

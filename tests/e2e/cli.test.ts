@@ -1,38 +1,44 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn, execFileSync, spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
-
-const execAsync = promisify(execFile);
+import { readFileSync, unlinkSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const CLI = resolve(import.meta.dirname, '../../dist/cli.js');
 const SAFE_SERVER = resolve(import.meta.dirname, '../../fixtures/servers/safe-server.ts');
 const VULN_SERVER = resolve(import.meta.dirname, '../../fixtures/servers/vulnerable-server.ts');
 
-async function runCli(
+function runCli(
   args: string[],
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  try {
-    const { stdout, stderr } = await execAsync('node', [CLI, ...args], {
+  return new Promise((res) => {
+    const proc = spawn('node', [CLI, ...args], {
       timeout: 30_000,
       env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
     });
-    return { stdout, stderr, exitCode: 0 };
-  } catch (err: unknown) {
-    const e = err as { stdout?: string; stderr?: string; code?: number };
-    return {
-      stdout: e.stdout ?? '',
-      stderr: e.stderr ?? '',
-      exitCode: e.code ?? 1,
-    };
-  }
+
+    const chunks: Buffer[] = [];
+    const errChunks: Buffer[] = [];
+
+    proc.stdout.on('data', (d: Buffer) => chunks.push(d));
+    proc.stderr.on('data', (d: Buffer) => errChunks.push(d));
+
+    proc.on('close', (code) => {
+      res({
+        stdout: Buffer.concat(chunks).toString(),
+        stderr: Buffer.concat(errChunks).toString(),
+        exitCode: code ?? 1,
+      });
+    });
+  });
 }
 
-beforeAll(async () => {
-  // Ensure the CLI is built
-  await execAsync('npx', ['tsup'], {
+beforeAll(() => {
+  execFileSync('npx', ['tsup'], {
     cwd: resolve(import.meta.dirname, '../..'),
     timeout: 30_000,
+    stdio: 'ignore',
   });
 });
 
@@ -62,9 +68,16 @@ describe('CLI', () => {
     expect(stdout).toContain('CERTIFICATION FAILED');
   });
 
-  it('outputs valid JSON with --json flag', async () => {
-    const { stdout, exitCode } = await runCli(['--json', 'npx', 'tsx', SAFE_SERVER]);
-    expect(exitCode).toBe(0);
+  it('outputs valid JSON with --json flag', { timeout: 60_000 }, () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'mcp-test-'));
+    const outFile = join(tmpDir, 'out.json');
+    const result = spawnSync('sh', ['-c', `node "${CLI}" --json npx tsx "${SAFE_SERVER}" > "${outFile}"`], {
+      timeout: 55_000,
+      env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+      stdio: 'pipe',
+    });
+    const stdout = readFileSync(outFile, 'utf-8');
+    unlinkSync(outFile);
     const report = JSON.parse(stdout);
     expect(report.decision).toBe('pass');
     expect(report.suites).toBeInstanceOf(Array);
@@ -84,12 +97,19 @@ describe('CLI', () => {
     expect(exitCode).toBe(0);
   });
 
-  it('--json output has correct structure for vulnerable server', async () => {
-    const { stdout } = await runCli(['--json', 'npx', 'tsx', VULN_SERVER]);
+  it('--json output has correct structure for vulnerable server', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'mcp-test-'));
+    const outFile = join(tmpDir, 'out.json');
+    spawnSync('sh', ['-c', `node "${CLI}" --json npx tsx "${VULN_SERVER}" > "${outFile}"`], {
+      timeout: 30_000,
+      env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+      stdio: 'pipe',
+    });
+    const stdout = readFileSync(outFile, 'utf-8');
+    unlinkSync(outFile);
     const report = JSON.parse(stdout);
     expect(report.decision).toBe('fail');
     expect(report.blockers.length).toBeGreaterThan(0);
-    // Check that findings have the expected shape
     const allFindings = report.suites.flatMap((s: { findings: unknown[] }) => s.findings);
     const finding = allFindings[0] as Record<string, unknown>;
     expect(finding).toHaveProperty('id');

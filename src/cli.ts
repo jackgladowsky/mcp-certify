@@ -1,6 +1,7 @@
 import { program } from 'commander';
 import { run } from './runner.js';
 import { printResults } from './reporter.js';
+import { runDoctor, runSetup, type PreflightReport } from './preflight.js';
 import type { AuthConfig, ServerTarget, RunOptions, Severity } from './types.js';
 
 function collectValues(value: string, previous: string[] = []): string[] {
@@ -85,10 +86,97 @@ function buildAuthConfig(options: {
   return Object.keys(auth).length > 0 ? auth : undefined;
 }
 
+function buildTarget(commandParts: string[], url?: string, timeout?: string): ServerTarget {
+  const target: ServerTarget = {
+    timeout: parseInt(timeout ?? '10000', 10),
+  };
+
+  if (url) {
+    target.url = url;
+  } else if (commandParts.length > 0) {
+    target.command = commandParts[0];
+    target.args = commandParts.slice(1);
+  }
+
+  return target;
+}
+
+function printPreflight(report: PreflightReport): void {
+  const icon = (status: 'pass' | 'warn' | 'fail'): string => {
+    switch (status) {
+      case 'pass':
+        return 'PASS';
+      case 'warn':
+        return 'WARN';
+      case 'fail':
+        return 'FAIL';
+    }
+  };
+
+  console.log();
+  console.log(`mcp-certify preflight`);
+  console.log();
+  for (const check of report.checks) {
+    console.log(`  [${icon(check.status)}] ${check.title}`);
+    console.log(`        ${check.detail}`);
+    if (check.remediation) {
+      console.log(`        ${check.remediation}`);
+    }
+  }
+  console.log();
+}
+
+program.enablePositionalOptions();
+
+program
+  .command('doctor')
+  .description('Check local environment readiness and runtime coverage support')
+  .passThroughOptions()
+  .argument('[command...]', 'Optional server command and arguments to evaluate for runtime support')
+  .option('--url <url>', 'Optional server URL to evaluate for runtime support')
+  .option('--timeout <ms>', 'Optional timeout context for the target', '10000')
+  .option('--json', 'Output preflight results as JSON')
+  .action(async (commandParts: string[], options) => {
+    const target =
+      commandParts.length > 0 || options.url
+        ? buildTarget(commandParts, options.url, options.timeout)
+        : undefined;
+
+    const report = await runDoctor(target);
+
+    if (options.json) {
+      console.log(JSON.stringify(report, null, 2));
+    } else {
+      printPreflight(report);
+    }
+
+    process.exit(report.ready ? 0 : 1);
+  });
+
+program
+  .command('setup')
+  .description('Prepare optional local dependencies for cleaner first-run scans')
+  .option('--json', 'Output setup results as JSON')
+  .action(async (options) => {
+    const report = await runSetup();
+
+    if (options.json) {
+      console.log(JSON.stringify(report, null, 2));
+    } else {
+      printPreflight(report);
+    }
+
+    process.exit(report.ready ? 0 : 1);
+  });
+
 program
   .name('mcp-certify')
   .version('0.1.0')
-  .description('Testing and certification for MCP servers')
+  .description('Testing and certification for MCP servers');
+
+program
+  .command('scan', { isDefault: true })
+  .description('Test and certify an MCP server')
   .passThroughOptions()
   .argument('[command...]', 'Server command and arguments (stdio mode)')
   .option('--url <url>', 'Server URL (HTTP mode)')
@@ -115,16 +203,7 @@ program
       return;
     }
 
-    const target: ServerTarget = {
-      timeout: parseInt(options.timeout, 10),
-    };
-
-    if (options.url) {
-      target.url = options.url;
-    } else {
-      target.command = commandParts[0];
-      target.args = commandParts.slice(1);
-    }
+    const target = buildTarget(commandParts, options.url, options.timeout);
 
     const runOptions: Partial<RunOptions> = {
       timeout: target.timeout,

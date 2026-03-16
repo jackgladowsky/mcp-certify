@@ -37,32 +37,32 @@ Score: 98/100
   Performance   100  ████████████████████
 ```
 
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jackgladowsky/mcp-certify/main/install.sh | bash
+```
+
+Requires Node.js 20+. Installs to `~/.mcp-certify` and links the `mcp-certify` command.
+
 ## Quick Start
 
 ```bash
-# Install
-git clone https://github.com/jackgladowsky/mcp-certify.git
-cd mcp-certify
-npm install
-npm run build
+# Check your environment
+mcp-certify doctor
 
 # Test any MCP server
-node dist/cli.js <your server command here>
-
-# Examples
-node dist/cli.js npx -y @modelcontextprotocol/server-filesystem /tmp
-node dist/cli.js node path/to/my-server.js
-node dist/cli.js python my_server.py
-node dist/cli.js --url http://localhost:3000/mcp
+mcp-certify npx -y @modelcontextprotocol/server-filesystem /tmp
+mcp-certify node path/to/my-server.js
+mcp-certify python my_server.py
+mcp-certify --url http://localhost:3000/mcp
 ```
-
-Requires Node.js 20+.
 
 ## Problem
 
 18,000+ MCP servers exist and most are broken or insecure. Average security score across scanned servers is 34/100. Registries disclaim "community servers are untested — use at your own risk." 38% of enterprises say security concerns are blocking MCP adoption.
 
-No comprehensive testing tool exists. The pieces are fragmented — MCP Inspector for manual debugging, mcp-validator for protocol checks, MCP-Scan (now Snyk) for security only. Nothing ties it together or makes a pass/fail certification decision.
+No comprehensive testing tool exists. The pieces are fragmented — protocol validators cover compliance, MCP-Scan (now Snyk) covers security only, and most other tooling is still manual debugging. Nothing ties it together or makes a pass/fail certification decision.
 
 ## What it does
 
@@ -74,13 +74,13 @@ Connects to any MCP server (stdio or HTTP), runs automated checks across multipl
 
 | Suite | What it checks |
 |---|---|
-| **Protocol** | Initialize handshake, capability negotiation, tools/list, resources/list, prompts/list, ping |
+| **Protocol** | Initialize handshake, capability declaration, tools/list, resources/list, resource templates, prompts/list, ping, duplicate/metadata consistency checks |
 | **Authentication** | Static bearer/basic/header auth for HTTP servers, env-based auth for stdio servers, authenticated vs unauthenticated access checks |
 | **Security** | Tool poisoning (hidden instructions, zero-width chars, bidi overrides), data exfiltration patterns, dangerous tool names, missing input schemas, cross-tool shadowing |
 | **Functional** | Tool descriptions, input schema validity, required field declarations, tool name quality, optional tool calling |
 | **Performance** | Cold start time, list latency, ping latency, response sizes |
 | **Supply Chain** | Vulnerability scanning, secret detection, misconfiguration (via Trivy integration) |
-| **Runtime Security** | Sandbox execution with canary files, secret exfiltration detection, unauthorized file access, network egress monitoring, rug pull detection |
+| **Runtime Security** | Sandbox execution for supported local stdio servers, with canary files, secret exfiltration detection, unauthorized file access, network egress monitoring, rug pull detection |
 | **Manifest Diff** | Snapshot server metadata, diff against baseline to detect description/schema changes over time |
 
 ### Severity levels
@@ -109,6 +109,12 @@ mcp-certify --call-tools node my-server.js
 # Run in sandbox with runtime security testing
 mcp-certify --sandbox node my-server.js
 
+# Check local readiness before first run
+mcp-certify doctor
+
+# Warm optional dependencies such as the Trivy DB
+mcp-certify setup
+
 # Fail on any medium or above finding
 mcp-certify --fail-on medium node my-server.js
 
@@ -133,6 +139,10 @@ mcp-certify --bearer-token "$TOKEN" --auth-required --url http://localhost:3000/
 
 Exit codes: `0` = certified, `1` = certification failed, `2` = fatal error.
 
+Runtime sandbox coverage is currently supported for stable local stdio launches such as `node dist/index.js` or `python path/to/server.py`. Package-manager launchers like `npx`, `npm`, `pnpm dlx`, `yarn dlx`, `bunx`, and `uvx` are reported as unsupported for runtime coverage so bootstrap traffic is not mistaken for server behavior.
+
+For a cleaner first run, use `mcp-certify doctor` to inspect local readiness and `mcp-certify setup` to warm optional dependencies such as the Trivy vulnerability database.
+
 ## Architecture
 
 ```
@@ -145,7 +155,7 @@ src/
     findings.ts                   Finding, Artifact, SuiteEvidence, Severity
     report.ts                     Blocker, CertificationDecision, GateRule
   suites/
-    protocol.ts                   Protocol compliance checks
+    protocol.ts                   Built-in protocol compliance and metadata consistency checks
     authentication.ts             Auth config and unauthenticated access checks
     security.ts                   Static security scanning
     functional.ts                 Schema and metadata validation
@@ -154,7 +164,6 @@ src/
     runtimeSecurity.ts            Sandbox harness orchestrator
     manifestDiff.ts               Snapshot and diff server metadata
   integrations/
-    mcp-validator.ts              Janix-ai/mcp-validator adapter
     trivy.ts                      Aqua Trivy adapter
     opa.ts                        OPA policy engine (built-in JS fallback)
   runtime/
@@ -181,7 +190,6 @@ fixtures/
 
 The CLI works standalone. These external tools add depth when installed:
 
-- **[mcp-validator](https://github.com/Janix-ai/mcp-validator)** — deeper protocol compliance testing (Python)
 - **[Trivy](https://trivy.dev)** — vulnerability, secret, and misconfiguration scanning
 - **[OPA](https://www.openpolicyagent.org)** — custom policy evaluation (built-in JS rules work without it)
 
@@ -203,8 +211,6 @@ The CLI works standalone. These external tools add depth when installed:
 
 | Tool | Coverage |
 |---|---|
-| MCP Inspector (official) | Manual debugging only |
-| mcp-validator | Protocol compliance only |
 | MCP Evals | LLM-scored quality, requires OpenAI key |
 | MCP-Scan (now Snyk) | Security scanning only |
 | **mcp-certify** | Protocol + security + functional + performance + supply chain + runtime sandbox + manifest diffing, unified certification decision |

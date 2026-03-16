@@ -7,7 +7,7 @@ import type { CanaryFile } from './canaries.js';
 import { generateCanaries, seedCanaries, checkCanaryLeaks, checkCanaryAccess } from './canaries.js';
 import { startCapture, proxyEnv } from './networkCapture.js';
 import type { CaptureSession } from './networkCapture.js';
-import type { Scenario, ScenarioResult } from './scenarios/types.js';
+import type { Scenario, ScenarioResult, ScenarioOptions } from './scenarios/types.js';
 import type { Readable } from 'node:stream';
 
 export interface HarnessConfig {
@@ -51,6 +51,7 @@ export interface HarnessResult {
 export async function runInHarness(
   config: HarnessConfig,
   scenarios: Scenario[],
+  scenarioOptions?: ScenarioOptions,
 ): Promise<HarnessResult> {
   const startTime = performance.now();
   let tempHome = '';
@@ -131,7 +132,7 @@ export async function runInHarness(
     for (const scenario of scenarios) {
       try {
         const result = await withTimeout(
-          scenario.run(client, tempHome, canaries, capture),
+          scenario.run(client, tempHome, canaries, capture, scenarioOptions),
           config.timeout,
           `Scenario "${scenario.name}" timed out`,
         );

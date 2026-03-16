@@ -9,6 +9,11 @@ export interface ScenarioResult {
   evidence: string;
 }
 
+export interface ScenarioOptions {
+  allowHosts?: string[];
+  denyHosts?: string[];
+}
+
 export interface Scenario {
   id: string;
   name: string;
@@ -20,5 +25,6 @@ export interface Scenario {
     homeDir: string,
     canaries: CanaryFile[],
     capture?: CaptureSession,
+    options?: ScenarioOptions,
   ) => Promise<ScenarioResult>;
 }

@@ -92,7 +92,10 @@ export async function runtimeSecuritySuite(
   };
 
   try {
-    const result = await runInHarness(harnessConfig, ALL_SCENARIOS);
+    const result = await runInHarness(harnessConfig, ALL_SCENARIOS, {
+      allowHosts: ctx.options.allowHosts,
+      denyHosts: ctx.options.denyHosts,
+    });
 
     // Collect all findings from scenario results
     const allFindings: Finding[] = [];

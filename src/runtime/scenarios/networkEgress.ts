@@ -4,10 +4,10 @@ import type { CanaryFile } from '../canaries.js';
 import { checkCanaryLeaks } from '../canaries.js';
 import type { CaptureSession } from '../networkCapture.js';
 import { extractDestinations } from '../networkCapture.js';
-import type { Scenario, ScenarioResult } from './types.js';
+import type { Scenario, ScenarioResult, ScenarioOptions } from './types.js';
 
 /** Hosts that are generally safe / expected for a local MCP server. */
-const SAFE_HOSTS = new Set([
+const DEFAULT_SAFE_HOSTS = new Set([
   'localhost',
   '127.0.0.1',
   '::1',
@@ -35,6 +35,7 @@ export const networkEgressScenario: Scenario = {
     _homeDir: string,
     canaries: CanaryFile[],
     capture?: CaptureSession,
+    options?: ScenarioOptions,
   ): Promise<ScenarioResult> {
     const findings: Finding[] = [];
     const evidenceLines: string[] = [];
@@ -90,8 +91,14 @@ export const networkEgressScenario: Scenario = {
     const events = capture?.events ?? [];
     const destinations = extractDestinations(events, allOutputText);
 
+    // Build safe host set from defaults + user-allowed hosts
+    const safeHosts = new Set(DEFAULT_SAFE_HOSTS);
+    if (options?.allowHosts) {
+      for (const h of options.allowHosts) safeHosts.add(h);
+    }
+
     // Filter to non-safe hosts
-    const suspiciousHosts = destinations.filter((h) => !SAFE_HOSTS.has(h));
+    const suspiciousHosts = destinations.filter((h) => !safeHosts.has(h));
 
     if (suspiciousHosts.length > 0) {
       const detail = suspiciousHosts.join(', ');

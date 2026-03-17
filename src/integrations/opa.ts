@@ -100,7 +100,7 @@ const RULE_REMEDIATION_MAP: Record<string, string> = {
   'sensitive-paths':
     'Remove references to sensitive file paths from tool descriptions and schemas, or restrict tool access to those paths.',
   'unapproved-network':
-    'Restrict network access to approved hosts only. Add required hosts to the allow-list via --allow-hosts.',
+    'Restrict network access to approved hosts only. Add required hosts to the allow-list via --allow-host.',
   'undeclared-mutations':
     'Add an explicit readOnlyHint annotation (set to false) on tools that perform mutations.',
   'command-execution':

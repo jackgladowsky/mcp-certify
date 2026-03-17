@@ -95,7 +95,7 @@ Certification is gate-based, not score-based. Critical findings fail certificati
 
 | Profile | Intended use | Default suites | Notes |
 |---|---|---|---|
-| `author-self-check` | Local development | protocol, security, functional, performance | Fast, no runtime by default |
+| `author-self-check` | Local development | protocol, security, functional | Fast, no runtime by default |
 | `registry-screening` | Marketplace or directory screening | author-self-check + supply chain + manifest diff | More conservative baseline |
 | `enterprise-strict` | High-trust evaluation | all suites including runtime | Treats partial runtime coverage as a blocker |
 
@@ -147,7 +147,7 @@ Runtime flags:
 |---|---|
 | `--sandbox` | Run the experimental runtime sandbox suite |
 
-`--sandbox` is experimental. It is most meaningful for stable local stdio launches like `node dist/index.js` or `python path/to/server.py`. Package-manager launchers such as `npx`, `npm`, `pnpm dlx`, `yarn dlx`, `bunx`, and `uvx` do not receive trustworthy runtime coverage.
+`--sandbox` is experimental. It is most meaningful for stable local stdio launches like `node dist/index.js` or `python path/to/server.py`. When a package-manager launcher is only wrapping a locally installed executable, `mcp-certify` will try to unwrap and run that local executable directly for runtime coverage. Otherwise launchers such as `npx`, `npm`, `pnpm dlx`, `yarn dlx`, `bunx`, and `uvx` do not receive trustworthy runtime coverage.
 
 When using `--url`, `mcp-certify` prints a note explaining that:
 

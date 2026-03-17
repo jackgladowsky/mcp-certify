@@ -432,6 +432,7 @@ export async function manifestDiffSuite(
   const startTime = performance.now();
   let findings: Finding[] = [];
   const artifacts: Artifact[] = [];
+  const certificationBlockers: Blocker[] = [];
 
   // 1. Capture current manifest
   const current = await captureManifest(client);
@@ -481,24 +482,30 @@ export async function manifestDiffSuite(
       findings.push({
         id: 'MANIFEST-BASELINE-ERR',
         title: 'Failed to load baseline manifest',
-        severity: 'info',
+        severity: 'medium',
         category: 'manifest-change',
         description: `Could not load or parse baseline: ${msg}`,
         remediation: 'Ensure the baseline path is correct and contains valid JSON.',
+      });
+      certificationBlockers.push({
+        findingId: 'MANIFEST-BASELINE-ERR',
+        gate: 'manifest-baseline',
+        reason: 'Requested manifest baseline could not be loaded',
       });
     }
   }
 
   const durationMs = Math.round(performance.now() - startTime);
   const score = computeScore(findings);
-
-  const certificationBlockers: Blocker[] = findings
-    .filter((f) => f.severity === 'critical' || f.severity === 'high')
-    .map((f) => ({
-      findingId: f.id,
-      gate: 'manifest-integrity',
-      reason: `Manifest change: ${f.title}`,
-    }));
+  certificationBlockers.push(
+    ...findings
+      .filter((f) => f.severity === 'critical' || f.severity === 'high')
+      .map((f) => ({
+        findingId: f.id,
+        gate: 'manifest-integrity',
+        reason: `Manifest change: ${f.title}`,
+      })),
+  );
 
   return {
     name: 'Manifest Diff',

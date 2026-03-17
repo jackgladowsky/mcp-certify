@@ -3,6 +3,7 @@ import { run } from './runner.js';
 import { printResults } from './reporter.js';
 import { runDoctor, runSetup, type PreflightReport } from './preflight.js';
 import type { AuthConfig, CertifyReport, ServerTarget, RunOptions, Severity } from './types.js';
+import { TOOL_VERSION } from './version.js';
 
 function collectValues(value: string, previous: string[] = []): string[] {
   previous.push(value);
@@ -43,6 +44,31 @@ function buildAuthConfig(options: {
   authRequired?: boolean;
 }): AuthConfig | undefined {
   const auth: AuthConfig = {};
+  const parsedHeaders =
+    (options.header ?? []).length > 0
+      ? parseNameValuePairs(options.header ?? [], ':').map(({ key, value }) => ({
+          name: key,
+          value,
+        }))
+      : [];
+  const authorizationHeaders = parsedHeaders.filter(
+    (header) => header.name.toLowerCase() === 'authorization',
+  );
+  const authMechanisms = [
+    options.bearerToken ? '--bearer-token' : undefined,
+    options.basicUser || options.basicPass ? '--basic-user/--basic-pass' : undefined,
+    authorizationHeaders.length > 0 ? '--header Authorization:...' : undefined,
+  ].filter((value): value is string => Boolean(value));
+
+  if (authorizationHeaders.length > 1) {
+    throw new Error('Specify at most one Authorization header.');
+  }
+
+  if (authMechanisms.length > 1) {
+    throw new Error(
+      `Choose only one HTTP authorization mechanism: ${authMechanisms.join(', ')}`,
+    );
+  }
 
   if (options.bearerToken) {
     auth.bearerToken = options.bearerToken;
@@ -58,11 +84,8 @@ function buildAuthConfig(options: {
     };
   }
 
-  if ((options.header ?? []).length > 0) {
-    auth.headers = parseNameValuePairs(options.header ?? [], ':').map(({ key, value }) => ({
-      name: key,
-      value,
-    }));
+  if (parsedHeaders.length > 0) {
+    auth.headers = parsedHeaders;
   }
 
   if ((options.authEnv ?? []).length > 0) {
@@ -203,7 +226,7 @@ program
 
 program
   .name('mcp-certify')
-  .version('0.1.0')
+  .version(TOOL_VERSION)
   .description('Testing and certification for MCP servers');
 
 program
@@ -261,19 +284,19 @@ program
       runOptions.denyHosts = options.denyHost as string[];
     }
 
-    const auth = buildAuthConfig({
-      bearerToken: options.bearerToken,
-      basicUser: options.basicUser,
-      basicPass: options.basicPass,
-      header: options.header as string[],
-      authEnv: options.authEnv as string[],
-      authRequired: options.authRequired,
-    });
-    if (auth) {
-      runOptions.auth = auth;
-    }
-
     try {
+      const auth = buildAuthConfig({
+        bearerToken: options.bearerToken,
+        basicUser: options.basicUser,
+        basicPass: options.basicPass,
+        header: options.header as string[],
+        authEnv: options.authEnv as string[],
+        authRequired: options.authRequired,
+      });
+      if (auth) {
+        runOptions.auth = auth;
+      }
+
       if (options.sandbox) {
         console.error(
           '[experimental] --sandbox enables runtime testing for local stdio builds, but atime detection and HTTP_PROXY isolation still have pre-launch gaps.',

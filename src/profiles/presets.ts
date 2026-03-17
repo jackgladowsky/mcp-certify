@@ -26,7 +26,7 @@ export const authorSelfCheck: CertificationProfile = {
  * Screening profile for registries vetting MCP servers.
  *
  * Runs all static analysis suites including supply chain and manifest diffing.
- * Moderate thresholds. Expects --scan-path to be provided for supply chain scanning.
+ * Moderate thresholds for marketplace or registry reviews.
  */
 export const registryScreening: CertificationProfile = {
   name: 'registry-screening',

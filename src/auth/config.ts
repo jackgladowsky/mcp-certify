@@ -30,8 +30,13 @@ export function buildRequestInit(auth?: AuthConfig): RequestInit | undefined {
     return undefined;
   }
 
+  const requestHeaders = new Headers();
+  for (const header of headers) {
+    requestHeaders.append(header.name, header.value);
+  }
+
   return {
-    headers: Object.fromEntries(headers.map((header) => [header.name, header.value])),
+    headers: requestHeaders,
   };
 }
 

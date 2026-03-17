@@ -3,6 +3,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { applyAuthEnv, buildRequestInit } from './auth/config.js';
 import type { AuthConfig, ServerTarget } from './types.js';
+import { TOOL_VERSION } from './version.js';
 
 export interface ConnectOptions {
   auth?: AuthConfig;
@@ -10,7 +11,7 @@ export interface ConnectOptions {
 }
 
 function createClient(): Client {
-  return new Client({ name: 'mcp-certify', version: '0.1.0' }, { capabilities: {} });
+  return new Client({ name: 'mcp-certify', version: TOOL_VERSION }, { capabilities: {} });
 }
 
 function formatConnectError(err: unknown): string {

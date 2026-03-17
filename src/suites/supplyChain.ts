@@ -1,5 +1,5 @@
-import { dirname } from 'node:path';
-import { stat } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
+import { access, stat } from 'node:fs/promises';
 import { runTrivy } from '../integrations/trivy.js';
 import type { Finding, Severity, SuiteResult, Blocker } from '../types/index.js';
 
@@ -41,54 +41,97 @@ function findBlockers(findings: Finding[]): Blocker[] {
  * Resolve the filesystem path to scan.
  *
  * Priority:
- * 1. Explicit scanPath option (from --scan-path or context)
+ * 1. Explicit scanPath option (from caller context)
  * 2. Directory containing the server command binary
  * 3. Current working directory as last resort
  */
-async function resolveScanPath(
+const PROJECT_MARKERS = [
+  'package.json',
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'pyproject.toml',
+  'Cargo.toml',
+] as const;
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function findProjectRoot(path: string): Promise<string> {
+  let current = path;
+
+  while (true) {
+    for (const marker of PROJECT_MARKERS) {
+      if (await fileExists(join(current, marker))) {
+        return current;
+      }
+    }
+
+    const parent = dirname(current);
+    if (parent === current) {
+      return path;
+    }
+    current = parent;
+  }
+}
+
+export async function resolveScanPath(
   scanPath?: string,
-  serverCommand?: string,
+  launchCommand?: string,
+  launchArgs: string[] = [],
 ): Promise<string> {
   // Use explicit path if provided
   if (scanPath) {
     try {
       const info = await stat(scanPath);
-      if (info.isDirectory()) return scanPath;
+      if (info.isDirectory()) return findProjectRoot(scanPath);
       // If it's a file, use its parent directory
-      return dirname(scanPath);
+      return findProjectRoot(dirname(scanPath));
     } catch {
       // Fall through to other options
     }
   }
 
-  // Try to derive from the server command
-  if (serverCommand) {
-    // For commands like "node /path/to/server.js" or "python3 /path/to/main.py"
-    // extract the script path and use its directory
-    const parts = serverCommand.split(/\s+/);
-    // Check the last part (or the second part for interpreter commands)
-    for (let i = parts.length - 1; i >= 0; i--) {
-      const part = parts[i];
-      if (part.startsWith('/') || part.startsWith('./') || part.startsWith('../')) {
-        try {
-          const info = await stat(part);
-          return info.isDirectory() ? part : dirname(part);
-        } catch {
-          // Not a valid path, continue
-        }
-      }
+  const candidateParts = [launchCommand, ...launchArgs].filter(
+    (part): part is string => Boolean(part && part.trim().length > 0),
+  );
+
+  // Try to derive from the launch command and args.
+  for (let i = candidateParts.length - 1; i >= 0; i--) {
+    const part = candidateParts[i];
+    const looksLikePath =
+      part.startsWith('/') ||
+      part.startsWith('./') ||
+      part.startsWith('../') ||
+      part.includes('/');
+
+    if (!looksLikePath) {
+      continue;
     }
 
-    // For a bare command, try the command itself (e.g. "npx" -> cwd)
-    // Fall through to cwd
+    const resolvedPart = resolve(part);
+    try {
+      const info = await stat(resolvedPart);
+      const baseDir = info.isDirectory() ? resolvedPart : dirname(resolvedPart);
+      return findProjectRoot(baseDir);
+    } catch {
+      // Not a valid path, continue.
+    }
   }
 
-  return process.cwd();
+  return findProjectRoot(process.cwd());
 }
 
 interface SupplyChainOptions {
   scanPath?: string;
-  serverCommand?: string;
+  launchCommand?: string;
+  launchArgs?: string[];
   timeout?: number;
 }
 
@@ -104,7 +147,11 @@ export async function supplyChainSuite(
   const timeout = options.timeout ?? 120_000; // 2 minutes default for trivy
   const startTime = performance.now();
 
-  const targetPath = await resolveScanPath(options.scanPath, options.serverCommand);
+  const targetPath = await resolveScanPath(
+    options.scanPath,
+    options.launchCommand,
+    options.launchArgs ?? [],
+  );
 
   const { findings, rawOutput } = await runTrivy(targetPath, timeout);
 

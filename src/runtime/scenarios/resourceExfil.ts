@@ -4,8 +4,7 @@ import type { CanaryFile } from '../canaries.js';
 import { checkCanaryLeaks } from '../canaries.js';
 import type { Scenario, ScenarioResult } from './types.js';
 
-/** Patterns that match common PII formats. */
-const PII_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
+const SOFT_DATA_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
   {
     label: 'Email address',
     pattern: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/,
@@ -14,6 +13,9 @@ const PII_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
     label: 'US phone number',
     pattern: /\b(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/,
   },
+];
+
+const SENSITIVE_DATA_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
   {
     label: 'SSN-like pattern',
     pattern: /\b\d{3}-\d{2}-\d{4}\b/,
@@ -134,23 +136,43 @@ export const resourceExfilScenario: Scenario = {
       }
 
       // Check for PII patterns
-      const piiFound: string[] = [];
-      for (const { label, pattern } of PII_PATTERNS) {
+      const softMatches: string[] = [];
+      for (const { label, pattern } of SOFT_DATA_PATTERNS) {
         if (pattern.test(contentText)) {
-          piiFound.push(label);
+          softMatches.push(label);
         }
       }
 
-      if (piiFound.length > 0) {
+      const sensitiveMatches: string[] = [];
+      for (const { label, pattern } of SENSITIVE_DATA_PATTERNS) {
+        if (pattern.test(contentText)) {
+          sensitiveMatches.push(label);
+        }
+      }
+
+      if (sensitiveMatches.length > 0) {
         findings.push({
           id: 'RUNTIME-RESEXFIL-001',
           title: `Resource "${resource.name}" contains sensitive data patterns`,
           severity: 'high',
           category: 'runtime-resexfil',
-          description: `The resource "${resource.uri}" contains patterns matching: ${piiFound.join(', ')}. This data may be unintentionally exposed.`,
-          evidence: `PII types: ${piiFound.join(', ')}`,
+          description: `The resource "${resource.uri}" contains patterns matching: ${sensitiveMatches.join(', ')}. This data may be unintentionally exposed.`,
+          evidence: `Sensitive data types: ${sensitiveMatches.join(', ')}`,
           remediation:
             'Resources should sanitize or redact sensitive data patterns before returning content.',
+        });
+      }
+
+      if (softMatches.length > 0) {
+        findings.push({
+          id: 'RUNTIME-RESEXFIL-001-SOFT',
+          title: `Resource "${resource.name}" contains contact-style data`,
+          severity: 'low',
+          category: 'runtime-resexfil',
+          description: `The resource "${resource.uri}" contains patterns matching: ${softMatches.join(', ')}. Review whether this data is expected to be public.`,
+          evidence: `Soft data types: ${softMatches.join(', ')}`,
+          remediation:
+            'Confirm that resource content only exposes contact information that is intended to be shared.',
         });
       }
     }

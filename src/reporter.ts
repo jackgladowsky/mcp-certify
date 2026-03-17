@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import type { CertifyReport, Finding, SuiteResult, Severity } from './types.js';
+import { TOOL_VERSION } from './version.js';
 
 const SEVERITY_SYMBOLS: Record<Severity, string> = {
   critical: chalk.red('\u25cf'),
@@ -75,7 +76,7 @@ function printSuite(suite: SuiteResult): void {
 
 export function printResults(result: CertifyReport): void {
   console.log();
-  console.log(chalk.bold('mcp-certify') + chalk.dim(' v0.1.0'));
+  console.log(chalk.bold('mcp-certify') + chalk.dim(` v${TOOL_VERSION}`));
   console.log();
 
   // Server info

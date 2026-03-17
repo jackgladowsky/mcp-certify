@@ -9,6 +9,7 @@ import { startCapture, proxyEnv } from './networkCapture.js';
 import type { CaptureSession } from './networkCapture.js';
 import type { Scenario, ScenarioResult, ScenarioOptions } from './scenarios/types.js';
 import type { Readable } from 'node:stream';
+import { TOOL_VERSION } from '../version.js';
 
 export interface HarnessConfig {
   command: string;
@@ -100,7 +101,7 @@ export async function runInHarness(
 
     // 6. Launch MCP server via StdioClientTransport
     client = new Client(
-      { name: 'mcp-certify-sandbox', version: '0.1.0' },
+      { name: 'mcp-certify-sandbox', version: TOOL_VERSION },
       { capabilities: {} },
     );
 

@@ -54,4 +54,20 @@ describe('safe server', () => {
     expect(result.server).toBeDefined();
     expect(result.server?.name).toBe('safe-reference-server');
   });
+
+  it(
+    'passes enterprise-strict when runtime launcher can be unwrapped',
+    { timeout: 120_000 },
+    async () => {
+      const result = await run(
+        { command: 'npx', args: ['tsx', SAFE_SERVER] },
+        { timeout: 120_000, profile: 'enterprise-strict' },
+      );
+      expect(result.decision).toBe('pass');
+      expect(result.blockers).toHaveLength(0);
+      expect(
+        result.suites.some((suite) => suite.name === 'Runtime Security'),
+      ).toBe(true);
+    },
+  );
 });

@@ -11,10 +11,11 @@ const VULN_SERVER = resolve(import.meta.dirname, '../../fixtures/servers/vulnera
 
 function runCli(
   args: string[],
+  timeout: number = 30_000,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((res) => {
     const proc = spawn('node', [CLI, ...args], {
-      timeout: 30_000,
+      timeout,
       env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
     });
 
@@ -138,5 +139,32 @@ describe('CLI', () => {
     expect(suiteNames).not.toContain('Performance');
     expect(suiteNames).not.toContain('Supply Chain');
     expect(suiteNames).not.toContain('Runtime Security');
+  });
+
+  it('fails when an explicit baseline cannot be loaded', async () => {
+    const { exitCode, stdout } = await runCli([
+      '--baseline',
+      '/tmp/mcp-certify-missing-baseline.json',
+      'npx',
+      'tsx',
+      SAFE_SERVER,
+    ], 60_000);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain('CERTIFICATION FAILED');
+    expect(stdout).toContain('Requested manifest baseline could not be loaded');
+  });
+
+  it('rejects conflicting HTTP authorization mechanisms', async () => {
+    const { exitCode, stderr } = await runCli([
+      '--bearer-token',
+      'token-1',
+      '--header',
+      'Authorization:Bearer token-2',
+      'npx',
+      'tsx',
+      SAFE_SERVER,
+    ]);
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain('Choose only one HTTP authorization mechanism');
   });
 });

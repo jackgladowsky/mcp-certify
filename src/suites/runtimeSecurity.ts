@@ -9,7 +9,7 @@ import { fileReadScenario } from '../runtime/scenarios/fileRead.js';
 import { networkEgressScenario } from '../runtime/scenarios/networkEgress.js';
 import { promptInjectionScenario } from '../runtime/scenarios/promptInjection.js';
 import { resourceExfilScenario } from '../runtime/scenarios/resourceExfil.js';
-import { assessRuntimeSupport } from '../runtime/support.js';
+import { assessRuntimeSupport, resolveRuntimeTarget } from '../runtime/support.js';
 
 /** All runtime security scenarios in execution order. */
 const ALL_SCENARIOS: Scenario[] = [
@@ -110,9 +110,23 @@ export async function runtimeSecuritySuite(
     }, `Unsupported runtime launcher detected: ${runtimeSupport.launcher ?? 'unknown launcher'}`);
   }
 
+  const runtimeTarget = resolveRuntimeTarget(target);
+  if (!runtimeTarget?.command) {
+    return makeCoverageUnavailableResult(startTime, 'error', {
+      id: 'RUNTIME-ERROR',
+      title: 'Runtime harness target resolution failed',
+      severity: 'medium',
+      category: 'runtime-coverage',
+      description:
+        'Runtime coverage was marked supported, but the launch command could not be resolved for harness execution.',
+      remediation:
+        'Run the built server directly from a stable local executable before relying on runtime coverage.',
+    }, 'Harness target resolution failed.');
+  }
+
   const harnessConfig: HarnessConfig = {
-    command: target.command!,
-    args: target.args ?? [],
+    command: runtimeTarget.command,
+    args: runtimeTarget.args ?? [],
     env: applyAuthEnv(target.env, ctx.options.auth),
     timeout: ctx.timeout ?? 30_000,
   };

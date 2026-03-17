@@ -243,9 +243,8 @@ export async function run(
   if (suiteIds.includes('supplyChain')) {
     suites.push(
       await supplyChainSuite({
-        serverCommand: [target.command, ...(target.args ?? [])]
-          .filter(Boolean)
-          .join(' '),
+        launchCommand: target.command,
+        launchArgs: target.args,
         timeout,
       }),
     );

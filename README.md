@@ -8,6 +8,12 @@
 npm install -g mcp-certify
 ```
 
+For a one-off run against the latest published version:
+
+```bash
+npx mcp-certify@latest --version
+```
+
 Node.js `20+` is required.
 
 Optional dependencies:
@@ -54,7 +60,7 @@ Example output:
 ```text
 $ mcp-certify node dist/index.js
 
-mcp-certify v0.1.0
+mcp-certify v0.1.x
 
   Server: my-server v0.1.0
 
@@ -208,7 +214,7 @@ This repo publishes to npm from GitHub Actions on version tags, not on every mer
 
 One-time npm setup:
 
-1. In npm package settings for `mcp-certify`, add a trusted publisher for this GitHub repository and the workflow file `.github/workflows/publish.yml`.
+1. In npm package settings for `mcp-certify`, add a trusted publisher for this GitHub repository with workflow filename `publish.yml`.
 2. Keep publishing tied to GitHub-hosted runners so OIDC trusted publishing works.
 
 Release flow:
@@ -216,3 +222,8 @@ Release flow:
 1. Bump the package version: `npm version patch` or `npm version minor` or `npm version major`
 2. Push the commit and tag: `git push origin main --follow-tags`
 3. GitHub Actions runs the publish workflow, verifies the `vX.Y.Z` tag matches [package.json](/Users/jackg/gladowskylabs/mcp-certify/package.json), then publishes that version to npm after build, typecheck, and tests pass
+
+Notes:
+
+- Installed global CLIs do not auto-update when a new npm version is published.
+- The publish workflow runs from version tags only, not from manual dispatch or every merge to `main`.

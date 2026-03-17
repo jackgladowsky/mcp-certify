@@ -1,5 +1,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import type { Finding, Severity } from '../types/index.js';
 
 const execFileAsync = promisify(execFile);
@@ -25,12 +28,55 @@ function mapTrivySeverity(trivySeverity: string): Severity {
 /**
  * Check whether Trivy is installed and accessible.
  */
-async function isInstalled(): Promise<boolean> {
+export async function isTrivyInstalled(): Promise<boolean> {
   try {
     await execFileAsync('trivy', ['--version'], { timeout: 10_000 });
     return true;
   } catch {
     return false;
+  }
+}
+
+export async function isTrivyDatabaseReady(timeout: number = 10_000): Promise<boolean> {
+  if (!(await isTrivyInstalled())) {
+    return false;
+  }
+
+  const scanDir = await mkdtemp(join(tmpdir(), 'mcp-certify-trivy-check-'));
+  try {
+    await execFileAsync(
+      'trivy',
+      ['filesystem', '--skip-db-update', '--scanners', 'vuln', '--format', 'json', scanDir],
+      {
+        timeout,
+        maxBuffer: 10 * 1024 * 1024,
+      },
+    );
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await rm(scanDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+export async function warmTrivyDatabase(timeout: number = 300_000): Promise<void> {
+  if (!(await isTrivyInstalled())) {
+    throw new Error('Trivy is not installed');
+  }
+
+  const scanDir = await mkdtemp(join(tmpdir(), 'mcp-certify-trivy-warm-'));
+  try {
+    await execFileAsync(
+      'trivy',
+      ['filesystem', '--download-db-only', '--no-progress', scanDir],
+      {
+        timeout,
+        maxBuffer: 20 * 1024 * 1024,
+      },
+    );
+  } finally {
+    await rm(scanDir, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
@@ -200,7 +246,7 @@ export async function runTrivy(
   timeout: number,
 ): Promise<TrivyResult> {
   // Check installation
-  if (!(await isInstalled())) {
+  if (!(await isTrivyInstalled())) {
     return {
       findings: [
         {

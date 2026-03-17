@@ -1,4 +1,4 @@
-import type { Finding, Severity } from './findings.js';
+import type { Finding, Severity, SuiteEvidence } from './findings.js';
 
 export interface Blocker {
   findingId: string;
@@ -13,11 +13,7 @@ export interface SuiteResult {
   findings: Finding[];
   score: number;
   certificationBlockers: Blocker[];
-  evidence: {
-    rawOutput?: string;
-    artifacts: { name: string; type: string; content?: string; path?: string }[];
-    durationMs: number;
-  };
+  evidence: SuiteEvidence;
 }
 
 export interface CertifyReport {
@@ -29,6 +25,7 @@ export interface CertifyReport {
   breakdown: { name: string; score: number }[];
   timestamp: string;
   profile?: string;
+  notes?: string[];
 }
 
 export interface GateRule {

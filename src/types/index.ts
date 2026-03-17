@@ -3,6 +3,7 @@ export type {
   Finding,
   Artifact,
   SuiteEvidence,
+  CoverageStatus,
 } from './findings.js';
 
 export type {

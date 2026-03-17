@@ -18,8 +18,19 @@ export interface Artifact {
   path?: string;
 }
 
+export type CoverageStatus =
+  | 'full'
+  | 'disabled'
+  | 'unsupported_transport'
+  | 'unsupported_launcher'
+  | 'error';
+
 export interface SuiteEvidence {
   rawOutput?: string;
   artifacts: Artifact[];
   durationMs: number;
+  coverage?: {
+    status: CoverageStatus;
+    detail?: string;
+  };
 }

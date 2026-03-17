@@ -2,7 +2,7 @@ import { program } from 'commander';
 import { run } from './runner.js';
 import { printResults } from './reporter.js';
 import { runDoctor, runSetup, type PreflightReport } from './preflight.js';
-import type { AuthConfig, ServerTarget, RunOptions, Severity } from './types.js';
+import type { AuthConfig, CertifyReport, ServerTarget, RunOptions, Severity } from './types.js';
 
 function collectValues(value: string, previous: string[] = []): string[] {
   previous.push(value);
@@ -101,6 +101,26 @@ function buildTarget(commandParts: string[], url?: string, timeout?: string): Se
   return target;
 }
 
+function buildBadge(result: CertifyReport): { markdown: string; url: string } {
+  const label = 'mcp-certify';
+  const status = result.decision === 'pass' ? 'pass' : result.decision === 'conditional' ? 'conditional' : 'fail';
+  const message = `${status} ${result.score}/100`;
+  const color =
+    result.decision === 'pass'
+      ? 'brightgreen'
+      : result.decision === 'conditional'
+        ? 'yellow'
+        : 'red';
+  const url =
+    `https://img.shields.io/static/v1?label=${encodeURIComponent(label)}` +
+    `&message=${encodeURIComponent(message)}` +
+    `&color=${color}`;
+  return {
+    url,
+    markdown: `[![mcp-certify](${url})](https://github.com/jackgladowsky/mcp-certify)`,
+  };
+}
+
 function printPreflight(report: PreflightReport): void {
   const icon = (status: 'pass' | 'warn' | 'fail'): string => {
     switch (status) {
@@ -137,20 +157,26 @@ program
   .option('--timeout <ms>', 'Optional timeout context for the target', '10000')
   .option('--json', 'Output preflight results as JSON')
   .action(async (commandParts: string[], options) => {
-    const target =
-      commandParts.length > 0 || options.url
-        ? buildTarget(commandParts, options.url, options.timeout)
-        : undefined;
+    try {
+      const target =
+        commandParts.length > 0 || options.url
+          ? buildTarget(commandParts, options.url, options.timeout)
+          : undefined;
 
-    const report = await runDoctor(target);
+      const report = await runDoctor(target);
 
-    if (options.json) {
-      console.log(JSON.stringify(report, null, 2));
-    } else {
-      printPreflight(report);
+      if (options.json) {
+        console.log(JSON.stringify(report, null, 2));
+      } else {
+        printPreflight(report);
+      }
+
+      process.exit(report.ready ? 0 : 1);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`\nFatal: ${msg}\n`);
+      process.exit(2);
     }
-
-    process.exit(report.ready ? 0 : 1);
   });
 
 program
@@ -158,15 +184,21 @@ program
   .description('Prepare optional local dependencies for cleaner first-run scans')
   .option('--json', 'Output setup results as JSON')
   .action(async (options) => {
-    const report = await runSetup();
+    try {
+      const report = await runSetup();
 
-    if (options.json) {
-      console.log(JSON.stringify(report, null, 2));
-    } else {
-      printPreflight(report);
+      if (options.json) {
+        console.log(JSON.stringify(report, null, 2));
+      } else {
+        printPreflight(report);
+      }
+
+      process.exit(report.ready ? 0 : 1);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`\nFatal: ${msg}\n`);
+      process.exit(2);
     }
-
-    process.exit(report.ready ? 0 : 1);
   });
 
 program
@@ -196,7 +228,8 @@ program
   .option('--header <name:value>', 'Custom HTTP header to send during MCP requests', collectValues, [])
   .option('--auth-env <KEY=VALUE>', 'Environment variable to inject for authenticated stdio servers', collectValues, [])
   .option('--auth-required', 'Assert that the server should reject unauthenticated access')
-  .option('--sandbox', 'Run server in sandbox mode')
+  .option('--sandbox', 'Run server in experimental sandbox mode for runtime testing')
+  .option('--badge', 'Print a shields.io markdown badge for the scan result')
   .action(async (commandParts: string[], options, command) => {
     if (!commandParts.length && !options.url) {
       program.help();
@@ -241,12 +274,23 @@ program
     }
 
     try {
+      if (options.sandbox) {
+        console.error(
+          '[experimental] --sandbox enables runtime testing for local stdio builds, but atime detection and HTTP_PROXY isolation still have pre-launch gaps.',
+        );
+      }
+
       const result = await run(target, runOptions);
+      const badge = options.badge ? buildBadge(result) : undefined;
 
       if (options.json) {
-        console.log(JSON.stringify(result, null, 2));
+        console.log(JSON.stringify(badge ? { ...result, badge } : result, null, 2));
       } else {
         printResults(result);
+        if (badge) {
+          console.log(`Badge: ${badge.markdown}`);
+          console.log();
+        }
       }
 
       process.exit(result.decision === 'pass' ? 0 : 1);

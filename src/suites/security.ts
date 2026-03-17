@@ -1,5 +1,5 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import type { SuiteResult, SuiteContext, Finding, Severity } from '../types.js';
+import type { SuiteResult, SuiteContext, Finding, Severity, Artifact } from '../types.js';
 import { evaluatePolicy } from '../integrations/opa.js';
 import { computeSuiteScore, extractToolText, withTimeout } from '../utils.js';
 
@@ -137,7 +137,7 @@ export async function securitySuite(
 ): Promise<SuiteResult> {
   const findings: Finding[] = [];
   const start = performance.now();
-  const artifacts: Array<{ name: string; type: string; content?: string }> = [];
+  const artifacts: Artifact[] = [];
 
   // Get tools to scan
   let tools: ToolLike[] = [];

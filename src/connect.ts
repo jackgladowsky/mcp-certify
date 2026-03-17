@@ -13,6 +13,13 @@ function createClient(): Client {
   return new Client({ name: 'mcp-certify', version: '0.1.0' }, { capabilities: {} });
 }
 
+function formatConnectError(err: unknown): string {
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return String(err);
+}
+
 export async function connect(
   target: ServerTarget,
   options: ConnectOptions = {},
@@ -55,15 +62,26 @@ async function connectHTTP(
     });
     await client.connect(transport);
     return { client, transport };
-  } catch {
-    const { SSEClientTransport } = await import(
-      '@modelcontextprotocol/sdk/client/sse.js'
-    );
-    const client = createClient();
-    const transport = new SSEClientTransport(new URL(url), {
-      requestInit,
-    });
-    await client.connect(transport);
-    return { client, transport };
+  } catch (streamableError: unknown) {
+    try {
+      const { SSEClientTransport } = await import(
+        '@modelcontextprotocol/sdk/client/sse.js'
+      );
+      const client = createClient();
+      const transport = new SSEClientTransport(new URL(url), {
+        requestInit,
+      });
+      await client.connect(transport);
+      return { client, transport };
+    } catch (sseError: unknown) {
+      const streamableMessage = formatConnectError(streamableError);
+      const sseMessage = formatConnectError(sseError);
+      throw new Error(
+        `Failed to connect to ${url} via streamable HTTP: ${streamableMessage}. SSE fallback also failed: ${sseMessage}`,
+        {
+          cause: streamableError instanceof Error ? streamableError : undefined,
+        },
+      );
+    }
   }
 }

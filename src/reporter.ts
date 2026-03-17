@@ -45,6 +45,12 @@ function printSuite(suite: SuiteResult): void {
     `${chalk.bold(suite.name)}${' '.repeat(Math.max(1, 48 - suite.name.length))}${color(String(suite.score))}`,
   );
 
+  if (suite.evidence.coverage && suite.evidence.coverage.status !== 'full') {
+    console.log(
+      `  ${chalk.yellow('!')} Runtime coverage: ${chalk.yellow(suite.evidence.coverage.status.replaceAll('_', ' '))}${suite.evidence.coverage.detail ? chalk.dim(` ${suite.evidence.coverage.detail}`) : ''}`,
+    );
+  }
+
   // Group findings by severity, sorted by severity order
   const grouped = new Map<Severity, Finding[]>();
   for (const finding of suite.findings) {
@@ -77,6 +83,12 @@ export function printResults(result: CertifyReport): void {
     console.log(
       `  Server: ${chalk.bold(result.server.name)} ${chalk.dim('v' + result.server.version)}`,
     );
+  }
+
+  if (result.notes && result.notes.length > 0) {
+    for (const note of result.notes) {
+      console.log(`  Note: ${chalk.yellow(note)}`);
+    }
   }
 
   // Certification decision — prominent

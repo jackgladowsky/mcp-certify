@@ -8,8 +8,7 @@ import { supplyChainSuite } from './suites/supplyChain.js';
 import { runtimeSecuritySuite } from './suites/runtimeSecurity.js';
 import { manifestDiffSuite } from './suites/manifestDiff.js';
 import { PROFILES } from './profiles/presets.js';
-import { runMcpValidator } from './integrations/mcp-validator.js';
-import { computeSuiteScore, withTimeout } from './utils.js';
+import { withTimeout } from './utils.js';
 import type {
   ServerTarget,
   CertifyReport,
@@ -183,33 +182,6 @@ function selectSuiteIds(target: ServerTarget, options: RunOptions): string[] {
   return selected;
 }
 
-async function augmentProtocolSuite(
-  suite: SuiteResult,
-  target: ServerTarget,
-  timeout: number,
-): Promise<void> {
-  if (!target.command) return;
-
-  const { findings, rawOutput } = await runMcpValidator(
-    target.command,
-    target.args ?? [],
-    timeout,
-  );
-
-  suite.findings.push(...findings);
-  suite.score = computeSuiteScore(suite.findings);
-  if (rawOutput) {
-    suite.evidence.rawOutput = suite.evidence.rawOutput
-      ? `${suite.evidence.rawOutput}\n\n${rawOutput}`
-      : rawOutput;
-    suite.evidence.artifacts.push({
-      name: 'mcp-validator-output',
-      type: 'text',
-      content: rawOutput,
-    });
-  }
-}
-
 export async function run(
   target: ServerTarget,
   incomingOptions: RunOptions = {},
@@ -243,9 +215,7 @@ export async function run(
 
   try {
     if (suiteIds.includes('protocol')) {
-      const suite = await protocolSuite(client, ctx);
-      await augmentProtocolSuite(suite, target, timeout);
-      suites.push(suite);
+      suites.push(await protocolSuite(client, ctx));
     }
     if (suiteIds.includes('authentication')) {
       suites.push(await authenticationSuite(target, client, ctx));
@@ -318,6 +288,13 @@ export async function run(
     }
   }
 
+  const notes: string[] = [];
+  if (target.url) {
+    notes.push(
+      'Remote target: Supply Chain is skipped because there is no local project tree to scan, and Runtime Security sandbox coverage is unavailable for HTTP targets.',
+    );
+  }
+
   return {
     server: serverVersion
       ? { name: serverVersion.name, version: serverVersion.version }
@@ -329,5 +306,6 @@ export async function run(
     breakdown,
     timestamp: new Date().toISOString(),
     profile: options.profile,
+    notes,
   };
 }

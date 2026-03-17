@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import type { Finding, Severity, SuiteResult, Blocker, SuiteContext } from '../types/index.js';
+import type { Finding, Severity, SuiteResult, Blocker, SuiteContext, Artifact } from '../types/index.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -431,7 +431,7 @@ export async function manifestDiffSuite(
 ): Promise<SuiteResult> {
   const startTime = performance.now();
   let findings: Finding[] = [];
-  const artifacts: { name: string; type: string; content?: string; path?: string }[] = [];
+  const artifacts: Artifact[] = [];
 
   // 1. Capture current manifest
   const current = await captureManifest(client);

@@ -1,13 +1,56 @@
 # mcp-certify
 
-One command to test if your MCP server actually works, is secure, and performs well.
+`mcp-certify` is a CLI that tests an MCP server for protocol health, security hygiene, operability, and runtime risk, then returns a pass/fail certification decision with evidence.
 
+## Install
+
+```bash
+npm install -g mcp-certify
 ```
-$ mcp-certify npx -y @modelcontextprotocol/server-filesystem /tmp
+
+Node.js `20+` is required.
+
+Optional dependencies:
+
+- `trivy` for supply-chain scanning
+- `opa` for custom Rego policy evaluation
+- `mcp-validator` for optional manual protocol cross-checks outside the default scan path
+
+Before the first scan:
+
+```bash
+mcp-certify doctor
+mcp-certify setup
+```
+
+## Quickstart
+
+Scan a local stdio server:
+
+```bash
+mcp-certify node dist/index.js
+```
+
+Scan a remote HTTP MCP endpoint:
+
+```bash
+mcp-certify --url http://localhost:3000/mcp
+```
+
+Generate a badge for a README:
+
+```bash
+mcp-certify --badge node dist/index.js
+```
+
+Example output:
+
+```text
+$ mcp-certify node dist/index.js
 
 mcp-certify v0.1.0
 
-  Server: secure-filesystem-server v0.2.0
+  Server: my-server v0.1.0
 
   CERTIFIED ✓
 
@@ -15,18 +58,14 @@ Protocol                                        100
   ○ Initialize handshake
   ○ Server info present
   ○ Capabilities declared
-  ○ tools/list returns valid response
-  ○ Ping responds
+  ○ Tool names are unique
 
-Security                                        95
-  ▪ Cross-tool reference in read_file
+Security                                         95
+  ▪ Cross-tool reference in read_file Cross-references can hide behavior behind another tool.
   ○ Hidden instruction scan clean
-  ○ Data exfiltration scan clean
-  ○ Invisible character scan clean
-  ○ All tools have input schemas
 
 Functional                                      100
-Performance                                     100
+Performance                                      97
 
 ────────────────────────────────────────────────────
 Score: 98/100
@@ -34,187 +73,128 @@ Score: 98/100
   Protocol      100  ████████████████████
   Security       95  ███████████████████░
   Functional    100  ████████████████████
-  Performance   100  ████████████████████
+  Performance    97  ████████████████████
 ```
 
-## Install
+## What It Checks
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/jackgladowsky/mcp-certify/main/install.sh | bash
-```
-
-Requires Node.js 20+. Installs to `~/.mcp-certify` and links the `mcp-certify` command.
-
-## Quick Start
-
-```bash
-# Check your environment
-mcp-certify doctor
-
-# Test any MCP server
-mcp-certify npx -y @modelcontextprotocol/server-filesystem /tmp
-mcp-certify node path/to/my-server.js
-mcp-certify python my_server.py
-mcp-certify --url http://localhost:3000/mcp
-```
-
-## Problem
-
-18,000+ MCP servers exist and most are broken or insecure. Average security score across scanned servers is 34/100. Registries disclaim "community servers are untested — use at your own risk." 38% of enterprises say security concerns are blocking MCP adoption.
-
-No comprehensive testing tool exists. The pieces are fragmented — protocol validators cover compliance, MCP-Scan (now Snyk) covers security only, and most other tooling is still manual debugging. Nothing ties it together or makes a pass/fail certification decision.
-
-## What it does
-
-Connects to any MCP server (stdio or HTTP), runs automated checks across multiple suites, and outputs a certification decision with evidence.
-
-**Certification is gate-based, not score-based.** Any critical finding fails certification. Any high finding in protocol or runtime policy fails certification. Score is secondary context.
-
-### Suites
-
-| Suite | What it checks |
-|---|---|
-| **Protocol** | Initialize handshake, capability declaration, tools/list, resources/list, resource templates, prompts/list, ping, duplicate/metadata consistency checks |
-| **Authentication** | Static bearer/basic/header auth for HTTP servers, env-based auth for stdio servers, authenticated vs unauthenticated access checks |
-| **Security** | Tool poisoning (hidden instructions, zero-width chars, bidi overrides), data exfiltration patterns, dangerous tool names, missing input schemas, cross-tool shadowing |
-| **Functional** | Tool descriptions, input schema validity, required field declarations, tool name quality, optional tool calling |
-| **Performance** | Cold start time, list latency, ping latency, response sizes |
-| **Supply Chain** | Vulnerability scanning, secret detection, misconfiguration (via Trivy integration) |
-| **Runtime Security** | Sandbox execution for supported local stdio servers, with canary files, secret exfiltration detection, unauthorized file access, network egress monitoring, rug pull detection |
-| **Manifest Diff** | Snapshot server metadata, diff against baseline to detect description/schema changes over time |
-
-### Severity levels
-
-- **● Critical** — Tool poisoning, canary token leaked, zero-width character injection
-- **▲ High** — Exfiltration patterns, unauthorized file access, unapproved network egress
-- **■ Medium** — Missing input schemas, dangerous tool names, invalid schemas
-- **▪ Low** — Long descriptions, cross-tool references, slow responses
-- **○ Info** — Passing checks
-
-## Usage
-
-```bash
-# Test a stdio server
-mcp-certify node my-server.js
-
-# Test an HTTP server
-mcp-certify --url http://localhost:3000/mcp
-
-# JSON output for CI/CD
-mcp-certify --json node my-server.js
-
-# Actually call tools during testing (may have side effects)
-mcp-certify --call-tools node my-server.js
-
-# Run in sandbox with runtime security testing
-mcp-certify --sandbox node my-server.js
-
-# Check local readiness before first run
-mcp-certify doctor
-
-# Warm optional dependencies such as the Trivy DB
-mcp-certify setup
-
-# Fail on any medium or above finding
-mcp-certify --fail-on medium node my-server.js
-
-# Use a certification profile
-mcp-certify --profile enterprise-strict node my-server.js
-
-# Diff against a saved baseline
-mcp-certify --baseline ./baseline.json node my-server.js
-
-# Evaluate metadata against a custom Rego policy
-mcp-certify --policy ./policy.rego node my-server.js
-
-# Allow or deny specific hosts in policy checks
-mcp-certify --allow-host api.github.com --deny-host example.net node my-server.js
-
-# Test an authenticated stdio server
-mcp-certify --auth-env MCP_CERTIFY_TOKEN=letmein --auth-required node my-server.js
-
-# Test an authenticated HTTP server
-mcp-certify --bearer-token "$TOKEN" --auth-required --url http://localhost:3000/mcp
-```
-
-Exit codes: `0` = certified, `1` = certification failed, `2` = fatal error.
-
-Runtime sandbox coverage is currently supported for stable local stdio launches such as `node dist/index.js` or `python path/to/server.py`. Package-manager launchers like `npx`, `npm`, `pnpm dlx`, `yarn dlx`, `bunx`, and `uvx` are reported as unsupported for runtime coverage so bootstrap traffic is not mistaken for server behavior.
-
-For a cleaner first run, use `mcp-certify doctor` to inspect local readiness and `mcp-certify setup` to warm optional dependencies such as the Trivy vulnerability database.
-
-## Architecture
-
-```
-src/
-  cli.ts                          CLI entry point
-  connect.ts                      Transport factory (stdio, HTTP, SSE fallback)
-  runner.ts                       Orchestrates suites, evaluates gate rules
-  reporter.ts                     Terminal + JSON output
-  types/
-    findings.ts                   Finding, Artifact, SuiteEvidence, Severity
-    report.ts                     Blocker, CertificationDecision, GateRule
-  suites/
-    protocol.ts                   Built-in protocol compliance and metadata consistency checks
-    authentication.ts             Auth config and unauthenticated access checks
-    security.ts                   Static security scanning
-    functional.ts                 Schema and metadata validation
-    performance.ts                Latency and size benchmarks
-    supplyChain.ts                Trivy-based dependency scanning
-    runtimeSecurity.ts            Sandbox harness orchestrator
-    manifestDiff.ts               Snapshot and diff server metadata
-  integrations/
-    trivy.ts                      Aqua Trivy adapter
-    opa.ts                        OPA policy engine (built-in JS fallback)
-  runtime/
-    harness.ts                    Sandbox runner (isolated HOME, env, proxy)
-    canaries.ts                   Fake credential files with detection tokens
-    networkCapture.ts             HTTP/HTTPS capture proxy
-    scenarios/
-      secretExfil.ts              Detect server reading seeded secrets
-      fileRead.ts                 Detect unauthorized file access
-      networkEgress.ts            Detect unapproved outbound requests
-      promptInjection.ts          Detect runtime description changes (rug pulls)
-      resourceExfil.ts            Detect sensitive data in resources
-  policy/
-    default.rego                  Default OPA policy rules
-  profiles/
-    presets.ts                    author-self-check, registry-screening, enterprise-strict
-fixtures/
-  servers/
-    vulnerable-server.ts          Intentionally broken (tool poisoning, exfil, injection)
-    safe-server.ts                Reference implementation (100/100)
-```
-
-## Integrations (optional, not required)
-
-The CLI works standalone. These external tools add depth when installed:
-
-- **[Trivy](https://trivy.dev)** — vulnerability, secret, and misconfiguration scanning
-- **[OPA](https://www.openpolicyagent.org)** — custom policy evaluation (built-in JS rules work without it)
-
-## Certification profiles
-
-| Profile | Suites | Thresholds |
+| Suite | Purpose | Notes |
 |---|---|---|
-| `author-self-check` | protocol, security, functional | Lenient, no sandbox |
-| `registry-screening` | + supply chain, manifest diff | Moderate, minScore 75 |
-| `enterprise-strict` | All including runtime | Zero tolerance, requires sandbox |
+| `Protocol` | MCP handshake, capabilities, `tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`, `ping`, duplicate metadata checks | Built-in native suite |
+| `Authentication` | Static bearer/basic/header auth for HTTP, env-based auth for stdio, unauthenticated access checks | Runs when auth config is provided |
+| `Security` | Tool metadata poisoning, hidden instructions, bidi/zero-width chars, exfiltration patterns, dangerous names, missing schemas | Static analysis |
+| `Functional` | Tool descriptions, schema shape, required-field consistency, optional shallow tool calls | Smoke-level contract checks |
+| `Performance` | Cold start, list latency, ping latency, payload size | Not load testing |
+| `Supply Chain` | Vulnerability, secret, and misconfiguration scanning | Uses `trivy` when installed |
+| `Manifest Diff` | Snapshot and compare tool/resource/prompt metadata to a baseline | Useful for drift or rug-pull checks |
+| `Runtime Security` | Experimental sandbox with canary files, file access checks, network egress checks, prompt/resource runtime scenarios | Supported for stable local stdio launches only |
 
-## Who uses it
+Certification is gate-based, not score-based. Critical findings fail certification even if the overall score looks good.
 
-- **MCP server authors** — run in CI to catch issues before publishing
-- **Enterprise teams** — vet third-party servers before connecting to internal systems
-- **Registry operators** — integrate quality scores into marketplaces
+## Profiles
 
-## Competitive landscape
+| Profile | Intended use | Default suites | Notes |
+|---|---|---|---|
+| `author-self-check` | Local development | protocol, security, functional, performance | Fast, no runtime by default |
+| `registry-screening` | Marketplace or directory screening | author-self-check + supply chain + manifest diff | More conservative baseline |
+| `enterprise-strict` | High-trust evaluation | all suites including runtime | Treats partial runtime coverage as a blocker |
 
-| Tool | Coverage |
+## CLI Reference
+
+### `scan` (default)
+
+```bash
+mcp-certify [options] <command...>
+mcp-certify [options] --url <http-url>
+```
+
+Core flags:
+
+| Flag | Meaning |
 |---|---|
-| MCP Evals | LLM-scored quality, requires OpenAI key |
-| MCP-Scan (now Snyk) | Security scanning only |
-| **mcp-certify** | Protocol + security + functional + performance + supply chain + runtime sandbox + manifest diffing, unified certification decision |
+| `--url <url>` | Scan a remote HTTP MCP server instead of launching a local stdio command |
+| `--timeout <ms>` | Timeout per operation |
+| `--json` | Emit JSON instead of terminal output |
+| `--badge` | Print a shields.io markdown badge using pass/fail and score |
+| `--profile <name>` | Select a certification profile |
+| `--fail-on <severity>` | Force failure on `critical|high|medium|low|info` or above |
+| `--call-tools` | Call tools during testing; may have side effects |
 
-## Status
+Baseline and policy flags:
 
-Active development. Built for the [General Intelligence Fellowship](https://www.generalintelligence.com/).
+| Flag | Meaning |
+|---|---|
+| `--baseline <path>` | Compare current metadata against a saved manifest |
+| `--policy <path>` | Evaluate a custom Rego policy when OPA is installed |
+| `--allow-host <host>` | Allow a host in policy/runtime checks |
+| `--deny-host <host>` | Deny a host in policy/runtime checks |
+| `--artifacts-dir <path>` | Write evidence artifacts to disk |
+
+Auth flags:
+
+| Flag | Meaning |
+|---|---|
+| `--bearer-token <token>` | HTTP bearer token |
+| `--basic-user <username>` | HTTP basic auth username |
+| `--basic-pass <password>` | HTTP basic auth password |
+| `--header <name:value>` | Additional HTTP header |
+| `--auth-env <KEY=VALUE>` | Inject env vars for authenticated stdio servers |
+| `--auth-required` | Assert that unauthenticated access should fail |
+
+Runtime flags:
+
+| Flag | Meaning |
+|---|---|
+| `--sandbox` | Run the experimental runtime sandbox suite |
+
+`--sandbox` is experimental. It is most meaningful for stable local stdio launches like `node dist/index.js` or `python path/to/server.py`. Package-manager launchers such as `npx`, `npm`, `pnpm dlx`, `yarn dlx`, `bunx`, and `uvx` do not receive trustworthy runtime coverage.
+
+When using `--url`, `mcp-certify` prints a note explaining that:
+
+- `Supply Chain` is skipped because there is no local project tree to scan
+- `Runtime Security` sandbox coverage is unavailable because the target is remote HTTP, not a local stdio launch
+
+### `doctor`
+
+```bash
+mcp-certify doctor
+mcp-certify doctor node dist/index.js
+mcp-certify doctor --url http://localhost:3000/mcp
+```
+
+Checks:
+
+- Node.js version
+- optional dependencies: `trivy`, `opa`, `mcp-validator`
+- Trivy DB readiness
+- runtime sandbox support for the provided target
+- optional target connectivity probe
+
+### `setup`
+
+```bash
+mcp-certify setup
+```
+
+Best-effort first-run preparation:
+
+- verifies optional dependencies
+- attempts installation when a clear installer is available
+- warms the Trivy vulnerability database
+- reminds you of the runtime sandbox support boundary
+
+## Coverage Notes
+
+`mcp-certify` is intentionally asymmetric:
+
+- Local stdio servers get the deepest coverage.
+- Remote HTTP servers still get protocol, security, functional, performance, and auth checks, but not local filesystem supply-chain analysis.
+- Runtime sandbox coverage is only meaningful for supported local stdio launches.
+
+That tradeoff is deliberate. The MVP is designed to be useful and honest before it is exhaustive.
+
+## Exit Codes
+
+- `0`: certified
+- `1`: certification failed or preflight not ready
+- `2`: fatal CLI/runtime error

@@ -19,6 +19,19 @@ describe('resolveScanPath', () => {
     );
   });
 
+  it('resolves direct launch command to server project root', async () => {
+    const serverPath = resolve(
+      import.meta.dirname,
+      '../../fixtures/servers/safe-server.ts',
+    );
+
+    const scanPath = await resolveScanPath(undefined, 'node', [serverPath]);
+
+    expect(scanPath).toBe(
+      resolve(import.meta.dirname, '../../fixtures/servers'),
+    );
+  });
+
   it('resolves explicit file paths to the containing project root', async () => {
     const serverPath = resolve(
       import.meta.dirname,

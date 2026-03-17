@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { computeSuiteScore } from '../utils.js';
 import type { Finding, Severity, SuiteResult, Blocker, SuiteContext, Artifact } from '../types/index.js';
 
 // ---------------------------------------------------------------------------
@@ -41,25 +42,7 @@ export interface ManifestChange {
   detail: string;
 }
 
-// ---------------------------------------------------------------------------
-// Severity-based scoring
-// ---------------------------------------------------------------------------
 
-const DEDUCTIONS: Record<Severity, number> = {
-  critical: 40,
-  high: 20,
-  medium: 10,
-  low: 5,
-  info: 0,
-};
-
-function computeScore(findings: Finding[]): number {
-  const totalDeduction = findings.reduce(
-    (sum, f) => sum + (DEDUCTIONS[f.severity] ?? 0),
-    0,
-  );
-  return Math.max(0, 100 - totalDeduction);
-}
 
 // ---------------------------------------------------------------------------
 // Capture
@@ -496,7 +479,7 @@ export async function manifestDiffSuite(
   }
 
   const durationMs = Math.round(performance.now() - startTime);
-  const score = computeScore(findings);
+  const score = computeSuiteScore(findings);
   certificationBlockers.push(
     ...findings
       .filter((f) => f.severity === 'critical' || f.severity === 'high')

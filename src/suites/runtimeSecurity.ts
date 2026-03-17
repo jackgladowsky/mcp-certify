@@ -1,5 +1,6 @@
 import type { ServerTarget } from '../types.js';
 import { applyAuthEnv } from '../auth/config.js';
+import { computeSuiteScore } from '../utils.js';
 import type { SuiteResult, SuiteContext, Finding, Blocker, Artifact } from '../types/index.js';
 import { runInHarness } from '../runtime/harness.js';
 import type { HarnessConfig } from '../runtime/harness.js';
@@ -185,7 +186,7 @@ export async function runtimeSecuritySuite(
     }
 
     // Compute score
-    const score = computeRuntimeScore(allFindings);
+    const score = computeSuiteScore(allFindings);
 
     // Build evidence artifacts
     const artifacts: Artifact[] = [];
@@ -243,34 +244,3 @@ export async function runtimeSecuritySuite(
   }
 }
 
-/**
- * Compute a 0-100 score based on runtime findings.
- *
- * - Start at 100
- * - Each critical finding: -25 points
- * - Each high finding: -15 points
- * - Each medium finding: -5 points
- * - Floor at 0
- */
-function computeRuntimeScore(findings: Finding[]): number {
-  let score = 100;
-  for (const f of findings) {
-    switch (f.severity) {
-      case 'critical':
-        score -= 25;
-        break;
-      case 'high':
-        score -= 15;
-        break;
-      case 'medium':
-        score -= 5;
-        break;
-      case 'low':
-        score -= 2;
-        break;
-      default:
-        break;
-    }
-  }
-  return Math.max(0, score);
-}

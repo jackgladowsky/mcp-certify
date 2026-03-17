@@ -1,28 +1,8 @@
 import { dirname, join, resolve } from 'node:path';
 import { access, stat } from 'node:fs/promises';
 import { runTrivy } from '../integrations/trivy.js';
-import type { Finding, Severity, SuiteResult, Blocker } from '../types/index.js';
-
-/** Severity-based score deductions. */
-const DEDUCTIONS: Record<Severity, number> = {
-  critical: 40,
-  high: 20,
-  medium: 10,
-  low: 5,
-  info: 0,
-};
-
-/**
- * Compute a score from 0-100 based on findings.
- * Starts at 100 and deducts based on severity. Minimum score is 0.
- */
-function computeScore(findings: Finding[]): number {
-  const totalDeduction = findings.reduce(
-    (sum, f) => sum + (DEDUCTIONS[f.severity] ?? 0),
-    0,
-  );
-  return Math.max(0, 100 - totalDeduction);
-}
+import { computeSuiteScore } from '../utils.js';
+import type { Finding, SuiteResult, Blocker } from '../types/index.js';
 
 /**
  * Identify certification blockers: any critical supply-chain finding blocks cert.
@@ -156,7 +136,7 @@ export async function supplyChainSuite(
   const { findings, rawOutput } = await runTrivy(targetPath, timeout);
 
   const durationMs = Math.round(performance.now() - startTime);
-  const score = computeScore(findings);
+  const score = computeSuiteScore(findings);
   const certificationBlockers = findBlockers(findings);
 
   return {

@@ -1,6 +1,6 @@
 {
   "name": "mcp-certify",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Testing and certification for MCP servers",
   "type": "module",
   "license": "MIT",
@@ -12,11 +12,19 @@
   "bugs": {
     "url": "https://github.com/jackgladowsky/mcp-certify/issues"
   },
-  "keywords": ["mcp", "model-context-protocol", "testing", "security", "certification"],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "testing",
+    "security",
+    "certification"
+  ],
   "bin": {
     "mcp-certify": "./dist/cli.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "prepublishOnly": "npm run build && npm test",
     "build": "tsup",

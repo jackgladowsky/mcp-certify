@@ -25,13 +25,13 @@ export const authorSelfCheck: CertificationProfile = {
 /**
  * Screening profile for registries vetting MCP servers.
  *
- * Runs all static analysis suites including supply chain and manifest diffing.
+ * Runs all static analysis suites including supply chain scanning.
  * Moderate thresholds for marketplace or registry reviews.
  */
 export const registryScreening: CertificationProfile = {
   name: 'registry-screening',
   description: 'Registry vetting for MCP server submissions',
-  suites: ['protocol', 'security', 'functional', 'supplyChain', 'manifestDiff'],
+  suites: ['protocol', 'security', 'functional', 'supplyChain'],
   failThresholds: {
     minScore: 75,
     maxCritical: 0,
@@ -59,7 +59,6 @@ export const enterpriseStrict: CertificationProfile = {
     'functional',
     'performance',
     'supplyChain',
-    'manifestDiff',
     'runtime',
   ],
   failThresholds: {

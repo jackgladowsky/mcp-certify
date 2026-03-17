@@ -102,8 +102,6 @@ export interface RunOptions {
   profile?: string;
   auth?: AuthConfig;
   policyPath?: string;
-  baselinePath?: string;
-  artifactsDir?: string;
   failOn?: Severity;
   sandbox?: boolean;
   allowHosts?: string[];

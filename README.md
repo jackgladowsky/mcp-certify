@@ -16,6 +16,12 @@ Optional dependencies:
 - `opa` for custom Rego policy evaluation
 - `mcp-validator` for optional manual protocol cross-checks outside the default scan path
 
+To update a global install after a new npm release:
+
+```bash
+npm update -g mcp-certify
+```
+
 Before the first scan:
 
 ```bash
@@ -86,7 +92,6 @@ Score: 98/100
 | `Functional` | Tool descriptions, schema shape, required-field consistency, optional shallow tool calls | Smoke-level contract checks |
 | `Performance` | Cold start, list latency, ping latency, payload size | Not load testing |
 | `Supply Chain` | Vulnerability, secret, and misconfiguration scanning | Uses `trivy` when installed |
-| `Manifest Diff` | Snapshot and compare tool/resource/prompt metadata to a baseline | Useful for drift or rug-pull checks |
 | `Runtime Security` | Experimental sandbox with canary files, file access checks, network egress checks, prompt/resource runtime scenarios | Supported for stable local stdio launches only |
 
 Certification is gate-based, not score-based. Critical findings fail certification even if the overall score looks good.
@@ -96,7 +101,7 @@ Certification is gate-based, not score-based. Critical findings fail certificati
 | Profile | Intended use | Default suites | Notes |
 |---|---|---|---|
 | `author-self-check` | Local development | protocol, security, functional | Fast, no runtime by default |
-| `registry-screening` | Marketplace or directory screening | author-self-check + supply chain + manifest diff | More conservative baseline |
+| `registry-screening` | Marketplace or directory screening | author-self-check + supply chain | More conservative default set |
 | `enterprise-strict` | High-trust evaluation | all suites including runtime | Treats partial runtime coverage as a blocker |
 
 ## CLI Reference
@@ -120,15 +125,13 @@ Core flags:
 | `--fail-on <severity>` | Force failure on `critical|high|medium|low|info` or above |
 | `--call-tools` | Call tools during testing; may have side effects |
 
-Baseline and policy flags:
+Policy and network flags:
 
 | Flag | Meaning |
 |---|---|
-| `--baseline <path>` | Compare current metadata against a saved manifest |
 | `--policy <path>` | Evaluate a custom Rego policy when OPA is installed |
 | `--allow-host <host>` | Allow a host in policy/runtime checks |
 | `--deny-host <host>` | Deny a host in policy/runtime checks |
-| `--artifacts-dir <path>` | Write evidence artifacts to disk |
 
 Auth flags:
 
@@ -198,3 +201,18 @@ That tradeoff is deliberate. The MVP is designed to be useful and honest before 
 - `0`: certified
 - `1`: certification failed or preflight not ready
 - `2`: fatal CLI/runtime error
+
+## Releasing
+
+This repo publishes to npm from GitHub Actions on version tags, not on every merge to `main`.
+
+One-time npm setup:
+
+1. In npm package settings for `mcp-certify`, add a trusted publisher for this GitHub repository and the workflow file `.github/workflows/publish.yml`.
+2. Keep publishing tied to GitHub-hosted runners so OIDC trusted publishing works.
+
+Release flow:
+
+1. Bump the package version: `npm version patch` or `npm version minor` or `npm version major`
+2. Push the commit and tag: `git push origin main --follow-tags`
+3. GitHub Actions runs the publish workflow, verifies the `vX.Y.Z` tag matches [package.json](/Users/jackg/gladowskylabs/mcp-certify/package.json), then publishes that version to npm after build, typecheck, and tests pass

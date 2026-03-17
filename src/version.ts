@@ -1,5 +1,3 @@
-import { createRequire } from 'node:module';
+declare const __TOOL_VERSION__: string;
 
-const require = createRequire(import.meta.url);
-
-export const TOOL_VERSION: string = require('../package.json').version;
+export const TOOL_VERSION = __TOOL_VERSION__;

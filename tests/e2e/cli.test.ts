@@ -141,19 +141,6 @@ describe('CLI', () => {
     expect(suiteNames).not.toContain('Runtime Security');
   });
 
-  it('fails when an explicit baseline cannot be loaded', async () => {
-    const { exitCode, stdout } = await runCli([
-      '--baseline',
-      '/tmp/mcp-certify-missing-baseline.json',
-      'npx',
-      'tsx',
-      SAFE_SERVER,
-    ], 60_000);
-    expect(exitCode).toBe(1);
-    expect(stdout).toContain('CERTIFICATION FAILED');
-    expect(stdout).toContain('Requested manifest baseline could not be loaded');
-  });
-
   it('rejects conflicting HTTP authorization mechanisms', async () => {
     const { exitCode, stderr } = await runCli([
       '--bearer-token',

@@ -6,7 +6,6 @@ import { functionalSuite } from './suites/functional.js';
 import { performanceSuite } from './suites/performance.js';
 import { supplyChainSuite } from './suites/supplyChain.js';
 import { runtimeSecuritySuite } from './suites/runtimeSecurity.js';
-import { manifestDiffSuite } from './suites/manifestDiff.js';
 import { PROFILES } from './profiles/presets.js';
 import { withTimeout } from './utils.js';
 import type {
@@ -29,7 +28,6 @@ const SUITE_WEIGHTS: Record<string, number> = {
   Performance: 0.08,
   'Supply Chain': 0.14,
   'Runtime Security': 0.18,
-  'Manifest Diff': 0.04,
 };
 
 const DEFAULT_SUITES = [
@@ -143,8 +141,6 @@ function mergeDefinedOptions(base: Partial<RunOptions>, overrides: RunOptions): 
     profile: overrides.profile ?? base.profile,
     auth: overrides.auth ?? base.auth,
     policyPath: overrides.policyPath ?? base.policyPath,
-    baselinePath: overrides.baselinePath ?? base.baselinePath,
-    artifactsDir: overrides.artifactsDir ?? base.artifactsDir,
     failOn: overrides.failOn ?? base.failOn,
     sandbox: overrides.sandbox ?? base.sandbox,
     allowHosts: overrides.allowHosts ?? base.allowHosts,
@@ -172,9 +168,6 @@ function selectSuiteIds(target: ServerTarget, options: RunOptions): string[] {
   }
   if (target.command) {
     selected.push('supplyChain');
-  }
-  if (options.baselinePath || options.artifactsDir) {
-    selected.push('manifestDiff');
   }
   if (options.sandbox) {
     selected.push('runtime');
@@ -228,9 +221,6 @@ export async function run(
     }
     if (suiteIds.includes('performance')) {
       suites.push(await performanceSuite(client, ctx));
-    }
-    if (suiteIds.includes('manifestDiff')) {
-      suites.push(await manifestDiffSuite(client, ctx));
     }
   } finally {
     try {

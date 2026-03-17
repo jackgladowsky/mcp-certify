@@ -239,9 +239,7 @@ program
   .option('--json', 'Output results as JSON')
   .option('--call-tools', 'Actually call tools during testing (may have side effects)')
   .option('--profile <name>', 'Certification profile to use')
-  .option('--artifacts-dir <path>', 'Directory for evidence and artifacts output')
   .option('--fail-on <severity>', 'Override: fail on this severity or above (critical|high|medium|low|info)')
-  .option('--baseline <path>', 'Diff against a saved manifest baseline')
   .option('--policy <path>', 'Path to a custom OPA/Rego policy file')
   .option('--allow-host <host>', 'Allow outbound access to this host in policy checks', collectValues, [])
   .option('--deny-host <host>', 'Deny outbound access to this host in policy checks', collectValues, [])
@@ -266,7 +264,6 @@ program
     };
     setIfExplicit(runOptions, 'callTools', options.callTools, command.getOptionValueSource('callTools'));
     setIfExplicit(runOptions, 'profile', options.profile, command.getOptionValueSource('profile'));
-    setIfExplicit(runOptions, 'artifactsDir', options.artifactsDir, command.getOptionValueSource('artifactsDir'));
     setIfExplicit(
       runOptions,
       'failOn',
@@ -274,7 +271,6 @@ program
       command.getOptionValueSource('failOn'),
     );
     setIfExplicit(runOptions, 'sandbox', options.sandbox, command.getOptionValueSource('sandbox'));
-    setIfExplicit(runOptions, 'baselinePath', options.baseline, command.getOptionValueSource('baseline'));
     setIfExplicit(runOptions, 'policyPath', options.policy, command.getOptionValueSource('policy'));
 
     if ((options.allowHost as string[]).length > 0) {
